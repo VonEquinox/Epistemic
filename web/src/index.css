@@ -17,3 +17,43 @@ body {
   height: 100%;
   min-height: 400px;
 }
+
+/* PDF.js text layer — transparent selectable overlay over canvas */
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  caret-color: transparent;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer ::selection {
+  background: rgb(37 99 235 / 0.28);
+}
+
+.textLayer ::-moz-selection {
+  background: rgb(37 99 235 / 0.28);
+}
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}

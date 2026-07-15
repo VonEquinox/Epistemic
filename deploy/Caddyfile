@@ -1,3 +1,4 @@
+# SPA static root is /srv — mount web/dist here via docker-compose (../web/dist:/srv:ro).
 # Replace {$DOMAIN} with your domain, or use :80 for local HTTP-only.
 {$DOMAIN:localhost} {
     encode gzip

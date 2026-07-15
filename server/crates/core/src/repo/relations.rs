@@ -161,16 +161,7 @@ pub async fn get_relation(pool: &PgPool, id: Uuid) -> AppResult<RelationDetail> 
     .fetch_all(pool)
     .await?;
 
-    let reviews = sqlx::query_as::<_, Review>(
-        r#"
-        SELECT id, subject_kind, subject_id, user_id, verdict, comment, created_at
-        FROM reviews WHERE subject_kind = 'relation' AND subject_id = $1
-        ORDER BY created_at
-        "#,
-    )
-    .bind(id)
-    .fetch_all(pool)
-    .await?;
+    let reviews = list_reviews(pool, SubjectKind::Relation, id).await?;
 
     Ok(RelationDetail {
         relation: rel,
@@ -228,6 +219,56 @@ pub async fn patch_relation(
     get_relation(pool, id).await
 }
 
+/// Upsert a review for any subject (`relation` | `claim_judgment`).
+/// Returns the stored review row. Callers recompute subject status as needed.
+pub async fn upsert_review(
+    pool: &PgPool,
+    subject_kind: SubjectKind,
+    subject_id: Uuid,
+    user_id: Uuid,
+    verdict: ReviewVerdict,
+    comment: &str,
+) -> AppResult<Review> {
+    let row = sqlx::query_as::<_, Review>(
+        r#"
+        INSERT INTO reviews (subject_kind, subject_id, user_id, verdict, comment)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (subject_kind, subject_id, user_id) DO UPDATE
+        SET verdict = EXCLUDED.verdict, comment = EXCLUDED.comment, created_at = now()
+        RETURNING id, subject_kind, subject_id, user_id, verdict, comment, created_at
+        "#,
+    )
+    .bind(subject_kind)
+    .bind(subject_id)
+    .bind(user_id)
+    .bind(verdict)
+    .bind(comment)
+    .fetch_one(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn list_reviews(
+    pool: &PgPool,
+    subject_kind: SubjectKind,
+    subject_id: Uuid,
+) -> AppResult<Vec<Review>> {
+    let rows = sqlx::query_as::<_, Review>(
+        r#"
+        SELECT id, subject_kind, subject_id, user_id, verdict, comment, created_at
+        FROM reviews
+        WHERE subject_kind = $1 AND subject_id = $2
+        ORDER BY created_at
+        "#,
+    )
+    .bind(subject_kind)
+    .bind(subject_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Review a relation (subject_kind = relation). Recomputes review_status.
 pub async fn add_review(
     pool: &PgPool,
     relation_id: Uuid,
@@ -237,22 +278,17 @@ pub async fn add_review(
 ) -> AppResult<RelationDetail> {
     let _ = get_relation(pool, relation_id).await?;
 
-    sqlx::query(
-        r#"
-        INSERT INTO reviews (subject_kind, subject_id, user_id, verdict, comment)
-        VALUES ('relation', $1, $2, $3, $4)
-        ON CONFLICT (subject_kind, subject_id, user_id) DO UPDATE
-        SET verdict = EXCLUDED.verdict, comment = EXCLUDED.comment, created_at = now()
-        "#,
+    upsert_review(
+        pool,
+        SubjectKind::Relation,
+        relation_id,
+        user_id,
+        verdict,
+        comment,
     )
-    .bind(relation_id)
-    .bind(user_id)
-    .bind(verdict)
-    .bind(comment)
-    .execute(pool)
     .await?;
 
-    recompute_status(pool, relation_id).await?;
+    recompute_status(pool, SubjectKind::Relation, relation_id).await?;
 
     let _ = jobs::enqueue(
         pool,
@@ -264,7 +300,18 @@ pub async fn add_review(
     get_relation(pool, relation_id).await
 }
 
-async fn recompute_status(pool: &PgPool, relation_id: Uuid) -> AppResult<()> {
+/// Recompute review_status for a relation from its reviews.
+/// For claim_judgment subjects this is a no-op here — claims repo handles that path.
+pub async fn recompute_status(
+    pool: &PgPool,
+    subject_kind: SubjectKind,
+    subject_id: Uuid,
+) -> AppResult<ReviewStatus> {
+    if subject_kind != SubjectKind::Relation {
+        // claim_judgment dispute status lives on the parent claim
+        return Ok(ReviewStatus::Unreviewed);
+    }
+
     #[derive(sqlx::FromRow)]
     struct V {
         verdict: ReviewVerdict,
@@ -272,10 +319,11 @@ async fn recompute_status(pool: &PgPool, relation_id: Uuid) -> AppResult<()> {
     let rows = sqlx::query_as::<_, V>(
         r#"
         SELECT verdict FROM reviews
-        WHERE subject_kind = 'relation' AND subject_id = $1
+        WHERE subject_kind = $1 AND subject_id = $2
         "#,
     )
-    .bind(relation_id)
+    .bind(subject_kind)
+    .bind(subject_id)
     .fetch_all(pool)
     .await?;
 
@@ -299,11 +347,11 @@ async fn recompute_status(pool: &PgPool, relation_id: Uuid) -> AppResult<()> {
     };
 
     sqlx::query(r#"UPDATE relations SET review_status = $2 WHERE id = $1"#)
-        .bind(relation_id)
+        .bind(subject_id)
         .bind(status)
         .execute(pool)
         .await?;
-    Ok(())
+    Ok(status)
 }
 
 pub async fn set_review_status(
@@ -315,6 +363,25 @@ pub async fn set_review_status(
     let verdict = match status {
         ReviewStatus::Confirmed => ReviewVerdict::Agree,
         ReviewStatus::Rejected => ReviewVerdict::Disagree,
+        ReviewStatus::Unreviewed => {
+            // 撤销审核：清掉该关系上的 reviews，再置回 unreviewed
+            let _ = get_relation(pool, relation_id).await?;
+            sqlx::query(
+                r#"
+                DELETE FROM reviews
+                WHERE subject_kind = 'relation' AND subject_id = $1
+                "#,
+            )
+            .bind(relation_id)
+            .execute(pool)
+            .await?;
+            sqlx::query(r#"UPDATE relations SET review_status = $2 WHERE id = $1"#)
+                .bind(relation_id)
+                .bind(ReviewStatus::Unreviewed)
+                .execute(pool)
+                .await?;
+            return get_relation(pool, relation_id).await;
+        }
         other => {
             sqlx::query(r#"UPDATE relations SET review_status = $2 WHERE id = $1"#)
                 .bind(relation_id)
@@ -416,6 +483,50 @@ pub async fn review_queue(pool: &PgPool, q: ReviewQueueQuery) -> AppResult<Vec<R
     Ok(out)
 }
 
-// silence
-#[allow(dead_code)]
-fn _use(_: SubjectKind) {}
+/// All assertion relations anchored on or involving a work (for paper card graph section).
+/// Excludes pure `cites` edges to keep the card readable; other types stay.
+pub async fn list_for_work(pool: &PgPool, work_id: Uuid) -> AppResult<Vec<RelationDetail>> {
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT DISTINCT r.id
+        FROM relations r
+        JOIN relation_members rm ON rm.relation_id = r.id
+        WHERE r.type <> 'cites'
+          AND (
+            rm.anchor_work_id = $1
+            OR (rm.entity_kind = 'work' AND rm.entity_id = $1)
+          )
+        ORDER BY r.id
+        "#,
+    )
+    .bind(work_id)
+    .fetch_all(pool)
+    .await?;
+
+    // Stable product order: confirmed → disputed → unreviewed → rejected, then type, created_at
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        out.push(get_relation(pool, id).await?);
+    }
+    out.sort_by(|a, b| {
+        fn rank(s: ReviewStatus) -> u8 {
+            match s {
+                ReviewStatus::Confirmed => 0,
+                ReviewStatus::Disputed => 1,
+                ReviewStatus::Unreviewed => 2,
+                ReviewStatus::Rejected => 3,
+            }
+        }
+        rank(a.relation.review_status)
+            .cmp(&rank(b.relation.review_status))
+            .then_with(|| {
+                a.relation
+                    .relation_type
+                    .as_str()
+                    .cmp(b.relation.relation_type.as_str())
+            })
+            .then_with(|| b.relation.created_at.cmp(&a.relation.created_at))
+    });
+    Ok(out)
+}
+

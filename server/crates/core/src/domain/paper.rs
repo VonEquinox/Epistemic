@@ -159,4 +159,10 @@ pub struct WorkCard {
     pub reading: Vec<super::ReadingStatusRow>,
     pub annotations_count: i64,
     pub evidence: Vec<super::EvidenceSpan>,
+    /// Assertion relations for the card graph section (excludes cites).
+    #[serde(default)]
+    pub relations: Vec<super::RelationDetail>,
+    /// Pipeline jobs for this work (primary + all versions).
+    #[serde(default)]
+    pub pipeline: Vec<super::Job>,
 }

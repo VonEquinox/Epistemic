@@ -2,13 +2,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './client';
 import type {
   Annotation,
+  AnnotationKind,
+  ClaimJudgment,
+  ClaimVerdict,
   EgoResponse,
   ImportBatch,
+  Invite,
+  Job,
   MapResponse,
   Project,
   ReadingLevel,
   RelationDetail,
   User,
+  Visibility,
   WorkCard,
   WorkListItem,
   SavedView,
@@ -55,7 +61,14 @@ export function useWork(id: string | undefined) {
     queryKey: ['work', id],
     queryFn: () => api.get<WorkCard>(`/works/${id}`),
     enabled: !!id,
-    refetchInterval: 5000,
+    // Poll while any pipeline job is queued/running (DEV.md: 5s, no WebSocket).
+    refetchInterval: (q) => {
+      const data = q.state.data as WorkCard | undefined;
+      const busy = (data?.pipeline ?? []).some(
+        (j) => j.status === 'queued' || j.status === 'running',
+      );
+      return busy ? 5000 : false;
+    },
   });
 }
 
@@ -129,11 +142,34 @@ export function useReviewAction() {
     mutationFn: ({
       id,
       verdict,
+      comment,
     }: {
       id: string;
       verdict: 'agree' | 'disagree';
-    }) => api.post(`/relations/${id}/review`, { verdict }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['review-queue'] }),
+      comment?: string;
+    }) =>
+      api.post<RelationDetail>(`/relations/${id}/review`, {
+        verdict,
+        ...(comment != null && comment !== '' ? { comment } : {}),
+      }),
+    onMutate: async ({ id }) => {
+      await qc.cancelQueries({ queryKey: ['review-queue'] });
+      const prev = qc.getQueryData<RelationDetail[]>(['review-queue']);
+      if (prev) {
+        qc.setQueryData<RelationDetail[]>(
+          ['review-queue'],
+          prev.filter((item) => item.relation.id !== id),
+        );
+      }
+      return { prev };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['review-queue'], ctx.prev);
+      console.error('[useReviewAction]', err);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['review-queue'] });
+    },
   });
 }
 
@@ -146,8 +182,53 @@ export function usePatchRelation() {
     }: {
       id: string;
       body: Record<string, unknown>;
-    }) => api.patch(`/relations/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['review-queue'] }),
+    }) => api.patch<RelationDetail>(`/relations/${id}`, body),
+    onMutate: async ({ id, body }) => {
+      await qc.cancelQueries({ queryKey: ['review-queue'] });
+      const prev = qc.getQueryData<RelationDetail[]>(['review-queue']);
+      if (prev) {
+        // review_status 改成非 unreviewed → 从队列移除；其余字段就地更新
+        const status = body.review_status as string | undefined;
+        if (status && status !== 'unreviewed') {
+          qc.setQueryData<RelationDetail[]>(
+            ['review-queue'],
+            prev.filter((item) => item.relation.id !== id),
+          );
+        } else {
+          qc.setQueryData<RelationDetail[]>(
+            ['review-queue'],
+            prev.map((item) => {
+              if (item.relation.id !== id) return item;
+              const next = { ...item, relation: { ...item.relation } };
+              if (body.relation_type)
+                next.relation.type = body.relation_type as typeof next.relation.type;
+              if (body.aspect !== undefined)
+                next.relation.aspect = body.aspect as string | null;
+              if (body.explanation !== undefined)
+                next.relation.explanation = body.explanation as string;
+              if (body.review_status === 'unreviewed')
+                next.relation.review_status = 'unreviewed';
+              if (body.swap_direction) {
+                next.members = next.members.map((m) => {
+                  if (m.role === 'source') return { ...m, role: 'target' };
+                  if (m.role === 'target') return { ...m, role: 'source' };
+                  return m;
+                });
+              }
+              return next;
+            }),
+          );
+        }
+      }
+      return { prev };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['review-queue'], ctx.prev);
+      console.error('[usePatchRelation]', err);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['review-queue'] });
+    },
   });
 }
 
@@ -156,7 +237,42 @@ export function useSetReading(workId: string) {
   return useMutation({
     mutationFn: (body: { status: ReadingLevel; starred?: boolean }) =>
       api.put(`/works/${workId}/reading-status`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['work', workId] }),
+    onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: ['work', workId] });
+      const prev = qc.getQueryData<import('./types').WorkCard>(['work', workId]);
+      if (prev) {
+        const me = prev.reading[0];
+        const nextReading = me
+          ? prev.reading.map((r, i) =>
+              i === 0
+                ? {
+                    ...r,
+                    status: body.status,
+                    starred: body.starred ?? r.starred,
+                    updated_at: new Date().toISOString(),
+                  }
+                : r,
+            )
+          : [
+              {
+                user_id: 'optimistic',
+                work_id: workId,
+                status: body.status,
+                starred: body.starred ?? false,
+                updated_at: new Date().toISOString(),
+              },
+            ];
+        qc.setQueryData(['work', workId], { ...prev, reading: nextReading });
+      }
+      return { prev };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['work', workId], ctx.prev);
+      console.error('[useSetReading]', err);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['work', workId] });
+    },
   });
 }
 
@@ -173,9 +289,16 @@ export function useCreateAnnotation(workId: string) {
   return useMutation({
     mutationFn: (body: {
       body: string;
-      kind?: string;
-      visibility?: string;
-    }) => api.post(`/works/${workId}/annotations`, body),
+      kind?: AnnotationKind;
+      visibility?: Visibility;
+      version_id?: string | null;
+      anchor?: {
+        page?: number;
+        text?: string;
+        bbox?: unknown;
+      } | unknown;
+      parent_id?: string | null;
+    }) => api.post<Annotation>(`/works/${workId}/annotations`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['annotations', workId] });
       qc.invalidateQueries({ queryKey: ['work', workId] });
@@ -266,12 +389,48 @@ export function useClaimJudgment(claimId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: {
-      verdict: string;
+      verdict: ClaimVerdict;
       conditions?: string;
       evidence_url?: string;
-    }) => api.post(`/claims/${claimId}/judgments`, body),
+    }) => api.post<ClaimJudgment>(`/claims/${claimId}/judgments`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['claims-full'] });
+      qc.invalidateQueries({ queryKey: ['work'] });
     },
   });
 }
+
+export function useRequeueJob(workId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      kind: string;
+      version_id?: string;
+      work_id?: string;
+    }) => api.post<Job>('/jobs/requeue', body),
+    onSuccess: () => {
+      if (workId) {
+        qc.invalidateQueries({ queryKey: ['work', workId] });
+      } else {
+        qc.invalidateQueries({ queryKey: ['work'] });
+      }
+    },
+  });
+}
+
+export function useUsers() {
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get<User[]>('/auth/users'),
+  });
+}
+
+export function useInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { email: string }) =>
+      api.post<Invite>('/auth/invites', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  });
+}
+

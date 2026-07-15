@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
         .route("/quick-add", post(quick_add))
         .route("/{id}", get(get_work))
         .route("/{id}/merge", post(merge))
+        .route("/{id}/split", post(split))
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,5 +148,30 @@ async fn merge(
 ) -> ApiResult<Json<Work>> {
     Ok(Json(
         works::merge_works(&state.pool, id, body.merged_work_id, user.id).await?,
+    ))
+}
+
+/// POST /works/{kept_id}/split — reverse a prior merge into `kept_id`.
+/// Provide `merge_history_id` and/or `merged_work_id` (at least one).
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SplitReq {
+    pub merge_history_id: Option<Uuid>,
+    pub merged_work_id: Option<Uuid>,
+}
+
+async fn split(
+    State(state): State<AppState>,
+    AuthUser(_user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<SplitReq>,
+) -> ApiResult<Json<Work>> {
+    Ok(Json(
+        works::split_work(
+            &state.pool,
+            id,
+            body.merge_history_id,
+            body.merged_work_id,
+        )
+        .await?,
     ))
 }

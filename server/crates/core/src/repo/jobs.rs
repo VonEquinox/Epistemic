@@ -145,6 +145,49 @@ pub async fn jobs_for_version(pool: &PgPool, version_id: Uuid) -> AppResult<Vec<
     Ok(rows)
 }
 
+/// Jobs for a work: payload work_id match OR any of its versions.
+pub async fn jobs_for_work(pool: &PgPool, work_id: Uuid) -> AppResult<Vec<Job>> {
+    let rows = sqlx::query_as::<_, Job>(
+        r#"
+        SELECT id, kind, payload, status, attempts, run_after,
+               locked_by, locked_at, last_error, created_at
+        FROM jobs
+        WHERE payload->>'work_id' = $1
+           OR payload->>'version_id' IN (
+                SELECT id::text FROM versions WHERE work_id = $2
+           )
+        ORDER BY created_at
+        "#,
+    )
+    .bind(work_id.to_string())
+    .bind(work_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Re-enqueue a pipeline step for a version/work (failed or manual re-run).
+pub async fn requeue(
+    pool: &PgPool,
+    kind: &str,
+    version_id: Option<Uuid>,
+    work_id: Option<Uuid>,
+) -> AppResult<Job> {
+    let mut payload = serde_json::Map::new();
+    if let Some(v) = version_id {
+        payload.insert("version_id".into(), serde_json::json!(v));
+    }
+    if let Some(w) = work_id {
+        payload.insert("work_id".into(), serde_json::json!(w));
+    }
+    if payload.is_empty() {
+        return Err(crate::error::AppError::BadRequest(
+            "requeue requires version_id or work_id".into(),
+        ));
+    }
+    enqueue(pool, kind, serde_json::Value::Object(payload)).await
+}
+
 // silence unused import warning if JobStatus only used via FromRow
 #[allow(dead_code)]
 fn _use_job_status(_: JobStatus) {}

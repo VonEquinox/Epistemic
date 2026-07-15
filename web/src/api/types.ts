@@ -16,11 +16,34 @@ export type RelationType =
   | 'contradicts_claim'
   | 'prerequisite_for';
 
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export type ClaimVerdict =
+  | 'supported'
+  | 'partially_supported'
+  | 'contradicted'
+  | 'not_reproduced'
+  | 'concern'
+  | 'unclear';
+
+export type AnnotationKind = 'note' | 'conjecture' | 'question';
+export type Visibility = 'private' | 'team';
+
 export interface User {
   id: string;
   email: string;
   name: string;
   role: UserRole;
+  created_at: string;
+}
+
+
+export interface Invite {
+  id: string;
+  email: string;
+  token: string;
+  created_by: string;
+  used_at?: string | null;
   created_at: string;
 }
 
@@ -65,6 +88,8 @@ export interface Claim {
   source: SourceLayer;
   review_status: ReviewStatus;
   created_at: string;
+  /** Present when loaded with judgments (claims-full). */
+  judgments?: ClaimJudgment[];
 }
 
 export interface Method {
@@ -84,6 +109,19 @@ export interface ReadingStatusRow {
   updated_at: string;
 }
 
+export interface Job {
+  id: string;
+  kind: string;
+  status: JobStatus;
+  attempts: number;
+  last_error?: string | null;
+  created_at: string;
+  payload?: unknown;
+  run_after?: string;
+  locked_by?: string | null;
+  locked_at?: string | null;
+}
+
 export interface WorkCard {
   work: Work;
   primary_version?: Version | null;
@@ -95,16 +133,23 @@ export interface WorkCard {
   reading: ReadingStatusRow[];
   annotations_count: number;
   evidence: EvidenceSpan[];
+  /** Assertion relations (excludes cites). Optional for older API. */
+  relations?: RelationDetail[];
+  /** Pipeline jobs for this work / versions. Optional for older API. */
+  pipeline?: Job[];
 }
 
 export interface Annotation {
   id: string;
   work_id: string;
   user_id: string;
-  kind: 'note' | 'conjecture' | 'question';
-  visibility: 'private' | 'team';
+  kind: AnnotationKind;
+  visibility: Visibility;
   body: string;
   anchor?: unknown;
+  parent_id?: string | null;
+  resolved?: boolean;
+  version_id?: string | null;
   created_at: string;
 }
 
@@ -235,7 +280,6 @@ export interface ImportBatch {
   created_at: string;
 }
 
-
 export interface EvidenceSpan {
   id: string;
   relation_id?: string | null;
@@ -252,7 +296,7 @@ export interface ClaimJudgment {
   id: string;
   claim_id: string;
   user_id: string;
-  verdict: string;
+  verdict: ClaimVerdict | string;
   conditions: string;
   evidence_url?: string | null;
   created_at: string;

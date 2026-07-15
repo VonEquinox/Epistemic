@@ -6,9 +6,15 @@ import {
   useState,
   forwardRef,
 } from 'react';
+import { TextLayer } from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { fetchPdfBlobUrl, loadPdfFromBlob, uploadPdf } from './load';
-import { bboxToViewport, parseBBox, type PdfBBox } from './coords';
+import {
+  bboxToViewport,
+  parseBBox,
+  viewportRectToBBox,
+  type PdfBBox,
+} from './coords';
 
 export interface EvidenceTarget {
   id?: string;
@@ -16,6 +22,15 @@ export interface EvidenceTarget {
   text: string;
   bbox?: unknown;
 }
+
+export interface PdfSelection {
+  text: string;
+  page: number;
+  bbox?: PdfBBox;
+}
+
+export type AnnotationKindOpt = 'note' | 'conjecture' | 'question';
+export type VisibilityOpt = 'private' | 'team';
 
 export interface PdfViewerHandle {
   jumpToEvidence: (ev: EvidenceTarget) => void;
@@ -27,16 +42,37 @@ interface Props {
   hasPdf: boolean;
   evidences?: EvidenceTarget[];
   activeEvidenceId?: string | null;
-  onSelection?: (sel: {
+  /** Fired when user confirms selection (bubble still shown by parent or viewer). */
+  onSelection?: (sel: PdfSelection) => void;
+  /** Create annotation from selection bubble. */
+  onAddAnnotation?: (payload: {
     text: string;
     page: number;
     bbox?: PdfBBox;
-  }) => void;
+    kind: AnnotationKindOpt;
+    visibility: VisibilityOpt;
+    body: string;
+  }) => void | Promise<void>;
+  /** Promote selection to claim. */
+  onPromoteClaim?: (sel: PdfSelection) => void | Promise<void>;
+  annotationPending?: boolean;
+  promotePending?: boolean;
   onUploaded?: () => void;
   className?: string;
 }
 
 const SCALE = 1.15;
+
+const KIND_OPTS: { value: AnnotationKindOpt; label: string }[] = [
+  { value: 'note', label: '笔记' },
+  { value: 'conjecture', label: '猜想' },
+  { value: 'question', label: '问题' },
+];
+
+const VIS_OPTS: { value: VisibilityOpt; label: string }[] = [
+  { value: 'private', label: '私人' },
+  { value: 'team', label: '团队' },
+];
 
 export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   {
@@ -45,6 +81,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     evidences = [],
     activeEvidenceId,
     onSelection,
+    onAddAnnotation,
+    onPromoteClaim,
+    annotationPending,
+    promotePending,
     onUploaded,
     className,
   },
@@ -60,6 +100,16 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const blobUrlRef = useRef<string | null>(null);
   const pageEls = useRef<Map<number, HTMLDivElement>>(new Map());
 
+  // Floating selection bubble state (coords relative to scroll container)
+  const [bubble, setBubble] = useState<{
+    sel: PdfSelection;
+    left: number;
+    top: number;
+  } | null>(null);
+  const [kind, setKind] = useState<AnnotationKindOpt>('note');
+  const [visibility, setVisibility] = useState<VisibilityOpt>('team');
+  const [noteBody, setNoteBody] = useState('');
+
   const cleanup = useCallback(() => {
     if (blobUrlRef.current) {
       URL.revokeObjectURL(blobUrlRef.current);
@@ -67,6 +117,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     }
     setDoc(null);
     setNumPages(0);
+    setBubble(null);
   }, []);
 
   useEffect(() => {
@@ -124,7 +175,6 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     jumpToPage,
   ]);
 
-  // jump when activeEvidenceId changes
   useEffect(() => {
     if (!activeEvidenceId) return;
     const ev = evidences.find((e) => e.id === activeEvidenceId);
@@ -144,6 +194,46 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       setLoading(false);
     }
   };
+
+  const dismissBubble = useCallback(() => {
+    setBubble(null);
+    setNoteBody('');
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
+  const handlePageSelection = useCallback(
+    (sel: PdfSelection, clientRect: DOMRect) => {
+      const container = containerRef.current;
+      if (!container) return;
+      const cRect = container.getBoundingClientRect();
+      // Position bubble below selection, clamped to container
+      const left = Math.max(
+        8,
+        Math.min(
+          clientRect.left - cRect.left + container.scrollLeft,
+          container.scrollWidth - 280,
+        ),
+      );
+      const top =
+        clientRect.bottom - cRect.top + container.scrollTop + 8;
+      setBubble({ sel, left, top });
+      setKind('note');
+      setVisibility('team');
+      setNoteBody(sel.text);
+      onSelection?.(sel);
+    },
+    [onSelection],
+  );
+
+  // Dismiss bubble on scroll / outside click
+  useEffect(() => {
+    if (!bubble) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dismissBubble();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [bubble, dismissBubble]);
 
   if (!versionId) {
     return (
@@ -192,7 +282,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       </div>
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto bg-ink-100 p-3 space-y-4"
+        className="relative flex-1 overflow-y-auto bg-ink-100 p-3 space-y-4"
+        onScroll={() => {
+          /* keep bubble fixed to content via scroll offsets already baked in */
+        }}
       >
         {doc &&
           Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
@@ -207,9 +300,112 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                 if (el) pageEls.current.set(pageNum, el);
                 else pageEls.current.delete(pageNum);
               }}
-              onSelection={onSelection}
+              onPageSelection={handlePageSelection}
             />
           ))}
+
+        {bubble && (
+          <div
+            className="absolute z-30 w-[268px] rounded-lg border border-ink-200 bg-white shadow-lg p-3 text-xs space-y-2"
+            style={{ left: bubble.left, top: bubble.top }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p className="text-ink-500 leading-snug">
+              划选 p.{bubble.sel.page}：
+              <span className="text-ink-700">
+                {bubble.sel.text.slice(0, 80)}
+                {bubble.sel.text.length > 80 ? '…' : ''}
+              </span>
+            </p>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-ink-400">类型</span>
+              {KIND_OPTS.map((k) => (
+                <button
+                  key={k.value}
+                  type="button"
+                  className={`px-2 py-0.5 rounded border ${
+                    kind === k.value
+                      ? 'bg-ink-900 text-white border-ink-900'
+                      : 'border-ink-200 text-ink-600 hover:border-ink-400'
+                  }`}
+                  onClick={() => setKind(k.value)}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-ink-400">可见</span>
+              {VIS_OPTS.map((v) => (
+                <button
+                  key={v.value}
+                  type="button"
+                  className={`px-2 py-0.5 rounded border ${
+                    visibility === v.value
+                      ? 'bg-accent text-white border-accent'
+                      : 'border-ink-200 text-ink-600 hover:border-ink-400'
+                  }`}
+                  onClick={() => setVisibility(v.value)}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+
+            <textarea
+              className="w-full border border-ink-200 rounded px-2 py-1 text-xs text-ink-800 resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+              rows={2}
+              value={noteBody}
+              onChange={(e) => setNoteBody(e.target.value)}
+              placeholder="批注内容…"
+            />
+
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {onAddAnnotation && (
+                <button
+                  type="button"
+                  disabled={annotationPending || !noteBody.trim()}
+                  className="px-2 py-1 rounded bg-ink-900 text-white disabled:opacity-50"
+                  onClick={async () => {
+                    await onAddAnnotation({
+                      text: bubble.sel.text,
+                      page: bubble.sel.page,
+                      bbox: bubble.sel.bbox,
+                      kind,
+                      visibility,
+                      body: noteBody.trim(),
+                    });
+                    dismissBubble();
+                  }}
+                >
+                  {annotationPending ? '提交中…' : '添加批注'}
+                </button>
+              )}
+              {onPromoteClaim && (
+                <button
+                  type="button"
+                  disabled={promotePending}
+                  className="px-2 py-1 rounded border border-accent text-accent hover:bg-accent-soft disabled:opacity-50"
+                  onClick={async () => {
+                    await onPromoteClaim(bubble.sel);
+                    dismissBubble();
+                  }}
+                >
+                  {promotePending ? '升格中…' : '升格为 Claim'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-ink-200 text-ink-500 ml-auto"
+                onClick={dismissBubble}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -222,7 +418,7 @@ function PdfPage({
   flashId,
   focus,
   onMount,
-  onSelection,
+  onPageSelection,
 }: {
   doc: PDFDocumentProxy;
   pageNumber: number;
@@ -230,15 +426,17 @@ function PdfPage({
   flashId: string | null;
   focus: boolean;
   onMount: (el: HTMLDivElement | null) => void;
-  onSelection?: Props['onSelection'];
+  onPageSelection?: (sel: PdfSelection, clientRect: DOMRect) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
   const [pageProxy, setPageProxy] = useState<PDFPageProxy | null>(null);
   const [textHighlights, setTextHighlights] = useState<
     { id: string; rect: { left: number; top: number; width: number; height: number }; flash: boolean }[]
   >([]);
+  const textLayerInst = useRef<TextLayer | null>(null);
 
   useEffect(() => {
     onMount(wrapRef.current);
@@ -266,9 +464,32 @@ function PdfPage({
           viewport: ReturnType<PDFPageProxy['getViewport']>;
         }) => { promise: Promise<void> }
       )({ canvasContext: ctx, viewport }).promise;
+
+      // Text layer for selectable text
+      const textLayerDiv = textLayerRef.current;
+      if (!textLayerDiv || cancelled) return;
+      textLayerInst.current?.cancel();
+      textLayerDiv.innerHTML = '';
+      textLayerDiv.style.width = `${viewport.width}px`;
+      textLayerDiv.style.height = `${viewport.height}px`;
+      try {
+        const textContent = await page.getTextContent();
+        if (cancelled) return;
+        const layer = new TextLayer({
+          textContentSource: textContent,
+          container: textLayerDiv,
+          viewport,
+        });
+        textLayerInst.current = layer;
+        await layer.render();
+      } catch {
+        // Text layer optional — selection may be limited without it
+      }
     })();
     return () => {
       cancelled = true;
+      textLayerInst.current?.cancel();
+      textLayerInst.current = null;
     };
   }, [doc, pageNumber]);
 
@@ -295,7 +516,6 @@ function PdfPage({
           });
           continue;
         }
-        // text fallback: find first matching item
         try {
           const tc = await pageProxy.getTextContent();
           const needle = ev.text.slice(0, 40).toLowerCase();
@@ -338,14 +558,32 @@ function PdfPage({
   }, [pageProxy, evidences, flashId, viewportSize]);
 
   const handleMouseUp = () => {
-    if (!onSelection || !pageProxy) return;
+    if (!onPageSelection || !pageProxy || !wrapRef.current) return;
     const sel = window.getSelection();
-    const text = sel?.toString().trim();
+    const text = sel?.toString().replace(/\s+/g, ' ').trim();
     if (!text) return;
-    // approximate bbox from selection range if inside this page
     const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
-    if (!range || !wrapRef.current?.contains(range.commonAncestorContainer)) return;
-    onSelection({ text, page: pageNumber });
+    if (!range || !wrapRef.current.contains(range.commonAncestorContainer)) return;
+
+    const clientRect = range.getBoundingClientRect();
+    if (clientRect.width === 0 && clientRect.height === 0) return;
+
+    const pageRect = wrapRef.current.getBoundingClientRect();
+    const cssRect = {
+      left: clientRect.left - pageRect.left,
+      top: clientRect.top - pageRect.top,
+      width: clientRect.width,
+      height: clientRect.height,
+    };
+    const viewport = pageProxy.getViewport({ scale: SCALE });
+    let bbox: PdfBBox | undefined;
+    try {
+      bbox = viewportRectToBBox(cssRect, viewport);
+    } catch {
+      bbox = undefined;
+    }
+
+    onPageSelection({ text, page: pageNumber, bbox }, clientRect);
   };
 
   return (
@@ -358,12 +596,14 @@ function PdfPage({
       onMouseUp={handleMouseUp}
       data-page={pageNumber}
     >
-      <div className="absolute left-2 top-2 z-10 text-[10px] bg-ink-900/70 text-white px-1.5 py-0.5 rounded">
+      <div className="absolute left-2 top-2 z-20 text-[10px] bg-ink-900/70 text-white px-1.5 py-0.5 rounded pointer-events-none">
         p.{pageNumber}
       </div>
       <canvas ref={canvasRef} className="block" />
-      {/* transparent text layer for selection — simplified: use highlights only */}
-      <div className="absolute inset-0 pointer-events-none">
+      {/* PDF.js text layer — enables native text selection */}
+      <div ref={textLayerRef} className="textLayer" />
+      {/* Evidence / claim highlight overlays (non-interactive) */}
+      <div className="absolute inset-0 pointer-events-none z-[1]">
         {textHighlights.map((h) => (
           <div
             key={h.id}

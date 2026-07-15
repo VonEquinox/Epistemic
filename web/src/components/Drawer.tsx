@@ -1,13 +1,14 @@
 import { useUiStore } from '../stores/ui';
 import { useWork } from '../api/hooks';
 import { PaperCard } from './PaperCard';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 export function Drawer() {
   const id = useUiStore((s) => s.selectedWorkId);
   const open = useUiStore((s) => s.drawerOpen);
   const selectWork = useUiStore((s) => s.selectWork);
   const { data, isLoading, error } = useWork(id ?? undefined);
+  const navigate = useNavigate();
 
   if (!open || !id) return null;
 
@@ -41,7 +42,18 @@ export function Drawer() {
         {error && (
           <p className="text-rose-600 text-sm">{(error as Error).message}</p>
         )}
-        {data && <PaperCard card={data} />}
+        {data && (
+          <PaperCard
+            card={data}
+            onJumpEvidence={(ev) => {
+              // Drawer has no PDF pane — open full paper detail at evidence.
+              const q = new URLSearchParams();
+              q.set('evidence', ev.id);
+              if (ev.page) q.set('page', String(ev.page));
+              navigate(`/papers/${id}?${q.toString()}`);
+            }}
+          />
+        )}
       </div>
     </aside>
   );

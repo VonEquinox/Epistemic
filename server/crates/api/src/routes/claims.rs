@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use epistemic_core::domain::{ClaimJudgment, ClaimVerdict, ReviewStatus, SourceLayer};
+use epistemic_core::domain::{ClaimJudgment, ClaimVerdict, ReviewStatus, ReviewVerdict, SourceLayer};
 use epistemic_core::repo::{claims, evidence};
 use serde::Deserialize;
 use utoipa::ToSchema;
@@ -14,9 +14,12 @@ use crate::state::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(create_claim))
-        .route("/{id}", get(get_claim))
-        .route("/{id}/judgments", post(add_judgment))
         .route("/promote", post(promote))
+        // static-ish paths before /{id}
+        .route("/judgments/{id}/review", post(review_judgment))
+        .route("/judgments/{id}", get(get_judgment))
+        .route("/{id}", get(get_claim))
+        .route("/{id}/judgments", get(list_judgments).post(add_judgment))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -99,6 +102,48 @@ async fn add_judgment(
     ))
 }
 
+async fn list_judgments(
+    State(state): State<AppState>,
+    AuthUser(_): AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Vec<claims::ClaimJudgmentDetail>>> {
+    Ok(Json(
+        claims::list_judgments_detailed(&state.pool, id).await?,
+    ))
+}
+
+async fn get_judgment(
+    State(state): State<AppState>,
+    AuthUser(_): AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<claims::ClaimJudgmentDetail>> {
+    Ok(Json(claims::get_judgment_detail(&state.pool, id).await?))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct JudgmentReviewReq {
+    pub verdict: ReviewVerdict,
+    pub comment: Option<String>,
+}
+
+async fn review_judgment(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<JudgmentReviewReq>,
+) -> ApiResult<Json<claims::ClaimJudgmentDetail>> {
+    Ok(Json(
+        claims::add_judgment_review(
+            &state.pool,
+            id,
+            user.id,
+            body.verdict,
+            body.comment.as_deref().unwrap_or(""),
+        )
+        .await?,
+    ))
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PromoteReq {
     pub work_id: Uuid,
@@ -138,3 +183,4 @@ pub async fn list_for_work(
         claims::list_with_evidence_for_work(&state.pool, work_id).await?,
     ))
 }
+

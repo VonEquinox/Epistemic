@@ -1,11 +1,14 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use serde::{Deserialize, Serialize};
+
 use crate::domain::{
-    Author, Claim, Method, Version, VersionAuthor, VersionKind, VersionRow, Work, WorkCard,
+    Author, Claim, Method, ReadingStatusRow, Version, VersionAuthor, VersionKind, VersionRow, Work,
+    WorkCard,
 };
 use crate::error::{AppError, AppResult};
-use crate::repo::{projects, reading};
+use crate::repo::{jobs, projects, reading, relations};
 use crate::util::normalize_title;
 
 #[derive(Debug, Clone)]
@@ -408,6 +411,8 @@ pub async fn get_work_card(pool: &PgPool, work_id: Uuid) -> AppResult<WorkCard> 
             .fetch_one(pool)
             .await?;
     let evidence = crate::repo::evidence::list_for_work(pool, work_id).await?;
+    let relations = relations::list_for_work(pool, work_id).await?;
+    let pipeline = jobs::jobs_for_work(pool, work_id).await?;
 
     Ok(WorkCard {
         work,
@@ -420,6 +425,8 @@ pub async fn get_work_card(pool: &PgPool, work_id: Uuid) -> AppResult<WorkCard> 
         reading: reading_rows,
         annotations_count,
         evidence,
+        relations,
+        pipeline,
     })
 }
 
@@ -516,6 +523,61 @@ pub async fn update_version_metadata(
     Ok(row.into())
 }
 
+/// Snapshot of a merged work, stored in `merge_history.snapshot` for reversible split.
+///
+/// Best-effort restore limitations (see `split_work`):
+/// - Neighbors folded onto the kept work at merge time stay on kept; only snapshotted
+///   pre-merge neighbor edges involving the merged work are re-inserted.
+/// - If a relation_member PK already occupies `(relation, work, role)` for the kept work,
+///   the merged work-entity member may be dropped at merge and re-inserted on split if possible.
+/// - Reading status is restored with ON CONFLICT DO NOTHING (kept-work status wins).
+/// - Claims/methods/annotations are moved back only by snapshotted ids; DNA created on the
+///   kept work after the merge is not reassigned.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MergeSnapshot {
+    merged_work: Work,
+    versions: Vec<Version>,
+    project_ids: Vec<Uuid>,
+    reading_status: Vec<ReadingStatusRow>,
+    claim_ids: Vec<Uuid>,
+    method_ids: Vec<Uuid>,
+    annotation_ids: Vec<Uuid>,
+    citation_ids_citing: Vec<Uuid>,
+    citation_ids_cited: Vec<Uuid>,
+    /// Pre-merge relation_members rows that referenced the merged work as entity or anchor.
+    relation_members: Vec<MergeRelationMember>,
+    neighbors: Vec<MergeNeighbor>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+struct MergeRelationMember {
+    relation_id: Uuid,
+    entity_kind: String,
+    entity_id: Uuid,
+    role: String,
+    anchor_work_id: Option<Uuid>,
+    position: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+struct MergeNeighbor {
+    dimension: String,
+    work_id: Uuid,
+    neighbor_work_id: Uuid,
+    score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+struct MergeHistoryRow {
+    id: Uuid,
+    kept_work_id: Uuid,
+    merged_work_id: Uuid,
+    snapshot: serde_json::Value,
+    merged_by: Option<Uuid>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    reverted_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 pub async fn merge_works(
     pool: &PgPool,
     kept_work_id: Uuid,
@@ -527,10 +589,78 @@ pub async fn merge_works(
     }
     let kept = get_work(pool, kept_work_id).await?;
     let merged = get_work(pool, merged_work_id).await?;
-    let snapshot = serde_json::json!({
-        "merged_work": merged,
-        "versions": list_versions_for_work(pool, merged_work_id).await?,
-    });
+
+    let versions = list_versions_for_work(pool, merged_work_id).await?;
+    let project_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT project_id FROM work_projects WHERE work_id = $1"#,
+    )
+    .bind(merged_work_id)
+    .fetch_all(pool)
+    .await?;
+    let reading_status = reading::list_for_work(pool, merged_work_id).await?;
+    let claim_ids: Vec<Uuid> =
+        sqlx::query_scalar(r#"SELECT id FROM claims WHERE work_id = $1"#)
+            .bind(merged_work_id)
+            .fetch_all(pool)
+            .await?;
+    let method_ids: Vec<Uuid> =
+        sqlx::query_scalar(r#"SELECT id FROM methods WHERE work_id = $1"#)
+            .bind(merged_work_id)
+            .fetch_all(pool)
+            .await?;
+    let annotation_ids: Vec<Uuid> =
+        sqlx::query_scalar(r#"SELECT id FROM annotations WHERE work_id = $1"#)
+            .bind(merged_work_id)
+            .fetch_all(pool)
+            .await?;
+    let citation_ids_citing: Vec<Uuid> =
+        sqlx::query_scalar(r#"SELECT id FROM citations WHERE citing_work_id = $1"#)
+            .bind(merged_work_id)
+            .fetch_all(pool)
+            .await?;
+    let citation_ids_cited: Vec<Uuid> =
+        sqlx::query_scalar(r#"SELECT id FROM citations WHERE cited_work_id = $1"#)
+            .bind(merged_work_id)
+            .fetch_all(pool)
+            .await?;
+    let relation_members = sqlx::query_as::<_, MergeRelationMember>(
+        r#"
+        SELECT relation_id, entity_kind::text AS entity_kind, entity_id,
+               role::text AS role, anchor_work_id, position
+        FROM relation_members
+        WHERE anchor_work_id = $1
+           OR (entity_kind = 'work' AND entity_id = $1)
+        "#,
+    )
+    .bind(merged_work_id)
+    .fetch_all(pool)
+    .await?;
+    let neighbors = sqlx::query_as::<_, MergeNeighbor>(
+        r#"
+        SELECT dimension::text AS dimension, work_id, neighbor_work_id, score
+        FROM neighbors
+        WHERE work_id = $1 OR neighbor_work_id = $1
+        "#,
+    )
+    .bind(merged_work_id)
+    .fetch_all(pool)
+    .await?;
+
+    let snapshot = MergeSnapshot {
+        merged_work: merged,
+        versions,
+        project_ids,
+        reading_status,
+        claim_ids,
+        method_ids,
+        annotation_ids,
+        citation_ids_citing,
+        citation_ids_cited,
+        relation_members,
+        neighbors,
+    };
+    let snapshot_json = serde_json::to_value(&snapshot)
+        .map_err(|e| AppError::Other(anyhow::anyhow!("serialize merge snapshot: {e}")))?;
 
     let mut tx = pool.begin().await?;
     for (sql, a, b) in [
@@ -593,6 +723,24 @@ pub async fn merge_works(
         .execute(&mut *tx)
         .await?;
 
+    // Work-entity relation members: rewrite entity_id; drop if PK already occupied by kept.
+    sqlx::query(
+        r#"
+        DELETE FROM relation_members rm
+        WHERE rm.entity_kind = 'work' AND rm.entity_id = $2
+          AND EXISTS (
+            SELECT 1 FROM relation_members k
+            WHERE k.relation_id = rm.relation_id
+              AND k.entity_kind = 'work'
+              AND k.entity_id = $1
+              AND k.role = rm.role
+          )
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(merged_work_id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query(
         r#"
         UPDATE relation_members SET entity_id = $1
@@ -604,6 +752,38 @@ pub async fn merge_works(
     .execute(&mut *tx)
     .await?;
 
+    // Fold neighbors onto kept (avoid self-loops / PK conflicts), then drop remainder.
+    sqlx::query(
+        r#"
+        INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+        SELECT dimension, $1, neighbor_work_id, score
+        FROM neighbors
+        WHERE work_id = $2 AND neighbor_work_id <> $1
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(merged_work_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+        SELECT dimension, work_id, $1, score
+        FROM neighbors
+        WHERE neighbor_work_id = $2 AND work_id <> $1
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(merged_work_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(r#"DELETE FROM neighbors WHERE work_id = $1 OR neighbor_work_id = $1"#)
+        .bind(merged_work_id)
+        .execute(&mut *tx)
+        .await?;
+
     sqlx::query(
         r#"
         INSERT INTO merge_history (kept_work_id, merged_work_id, snapshot, merged_by)
@@ -612,7 +792,7 @@ pub async fn merge_works(
     )
     .bind(kept_work_id)
     .bind(merged_work_id)
-    .bind(snapshot)
+    .bind(&snapshot_json)
     .bind(merged_by)
     .execute(&mut *tx)
     .await?;
@@ -628,4 +808,397 @@ pub async fn merge_works(
 
     tx.commit().await?;
     Ok(kept)
+}
+
+/// Reverse a prior merge: restore the merged work from `merge_history.snapshot`.
+///
+/// `kept_work_id` is the work that absorbed the merge (path param). Identify the
+/// history row via `merge_history_id` and/or `merged_work_id` (at least one required).
+pub async fn split_work(
+    pool: &PgPool,
+    kept_work_id: Uuid,
+    merge_history_id: Option<Uuid>,
+    merged_work_id: Option<Uuid>,
+) -> AppResult<Work> {
+    if merge_history_id.is_none() && merged_work_id.is_none() {
+        return Err(AppError::BadRequest(
+            "provide merge_history_id or merged_work_id".into(),
+        ));
+    }
+
+    let hist = load_merge_history(pool, kept_work_id, merge_history_id, merged_work_id).await?;
+    if hist.reverted_at.is_some() {
+        return Err(AppError::Conflict(format!(
+            "merge_history {} already reverted",
+            hist.id
+        )));
+    }
+    if hist.kept_work_id != kept_work_id {
+        return Err(AppError::BadRequest(format!(
+            "merge_history {} kept_work_id does not match path work",
+            hist.id
+        )));
+    }
+
+    // Ensure kept still exists.
+    let _kept = get_work(pool, kept_work_id).await?;
+
+    let snap: MergeSnapshot = serde_json::from_value(hist.snapshot.clone()).map_err(|e| {
+        AppError::Other(anyhow::anyhow!(
+            "invalid merge snapshot for history {}: {e}",
+            hist.id
+        ))
+    })?;
+
+    let restored_id = snap.merged_work.id;
+    if restored_id != hist.merged_work_id {
+        return Err(AppError::Other(anyhow::anyhow!(
+            "snapshot merged_work.id mismatch with merge_history.merged_work_id"
+        )));
+    }
+
+    // Do not clobber if someone recreated the id.
+    if sqlx::query_scalar::<_, Uuid>(r#"SELECT id FROM works WHERE id = $1"#)
+        .bind(restored_id)
+        .fetch_optional(pool)
+        .await?
+        .is_some()
+    {
+        return Err(AppError::Conflict(format!(
+            "work {restored_id} already exists; cannot split"
+        )));
+    }
+
+    let version_ids: Vec<Uuid> = snap.versions.iter().map(|v| v.id).collect();
+
+    let mut tx = pool.begin().await?;
+
+    // Recreate work row first with null primary (versions still on kept until reassigned).
+    // primary_version_id FK is DEFERRABLE INITIALLY DEFERRED.
+    sqlx::query(
+        r#"
+        INSERT INTO works (id, title_norm, primary_version_id, created_by, created_at)
+        VALUES ($1, $2, NULL, $3, $4)
+        "#,
+    )
+    .bind(restored_id)
+    .bind(&snap.merged_work.title_norm)
+    .bind(snap.merged_work.created_by)
+    .bind(snap.merged_work.created_at)
+    .execute(&mut *tx)
+    .await?;
+
+    if !version_ids.is_empty() {
+        sqlx::query(
+            r#"
+            UPDATE versions SET work_id = $1
+            WHERE id = ANY($2) AND work_id = $3
+            "#,
+        )
+        .bind(restored_id)
+        .bind(&version_ids)
+        .bind(kept_work_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Restore primary_version_id on the recreated work.
+    if let Some(pvid) = snap.merged_work.primary_version_id {
+        sqlx::query(r#"UPDATE works SET primary_version_id = $1 WHERE id = $2"#)
+            .bind(pvid)
+            .bind(restored_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // If kept's primary was one of the moved versions, repoint it.
+    sqlx::query(
+        r#"
+        UPDATE works w
+        SET primary_version_id = (
+            SELECT v.id FROM versions v
+            WHERE v.work_id = w.id
+            ORDER BY v.created_at
+            LIMIT 1
+        )
+        WHERE w.id = $1
+          AND (
+            w.primary_version_id IS NULL
+            OR NOT EXISTS (
+                SELECT 1 FROM versions v
+                WHERE v.id = w.primary_version_id AND v.work_id = w.id
+            )
+          )
+        "#,
+    )
+    .bind(kept_work_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if !snap.claim_ids.is_empty() {
+        sqlx::query(r#"UPDATE claims SET work_id = $1 WHERE id = ANY($2) AND work_id = $3"#)
+            .bind(restored_id)
+            .bind(&snap.claim_ids)
+            .bind(kept_work_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if !snap.method_ids.is_empty() {
+        sqlx::query(r#"UPDATE methods SET work_id = $1 WHERE id = ANY($2) AND work_id = $3"#)
+            .bind(restored_id)
+            .bind(&snap.method_ids)
+            .bind(kept_work_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if !snap.annotation_ids.is_empty() {
+        sqlx::query(
+            r#"UPDATE annotations SET work_id = $1 WHERE id = ANY($2) AND work_id = $3"#,
+        )
+        .bind(restored_id)
+        .bind(&snap.annotation_ids)
+        .bind(kept_work_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    if !snap.citation_ids_citing.is_empty() {
+        sqlx::query(
+            r#"
+            UPDATE citations SET citing_work_id = $1
+            WHERE id = ANY($2) AND citing_work_id = $3
+            "#,
+        )
+        .bind(restored_id)
+        .bind(&snap.citation_ids_citing)
+        .bind(kept_work_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    if !snap.citation_ids_cited.is_empty() {
+        sqlx::query(
+            r#"
+            UPDATE citations SET cited_work_id = $1
+            WHERE id = ANY($2) AND cited_work_id = $3
+            "#,
+        )
+        .bind(restored_id)
+        .bind(&snap.citation_ids_cited)
+        .bind(kept_work_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Reverse relation_member rewrites using snapshotted pre-merge keys.
+    for m in &snap.relation_members {
+        if m.entity_kind == "work" && m.entity_id == restored_id {
+            // After merge entity_id became kept; try to move it back.
+            let updated = sqlx::query(
+                r#"
+                UPDATE relation_members
+                SET entity_id = $1
+                WHERE relation_id = $2
+                  AND entity_kind = 'work'
+                  AND entity_id = $3
+                  AND role = $4::member_role
+                  AND NOT EXISTS (
+                    SELECT 1 FROM relation_members x
+                    WHERE x.relation_id = $2
+                      AND x.entity_kind = 'work'
+                      AND x.entity_id = $1
+                      AND x.role = $4::member_role
+                  )
+                "#,
+            )
+            .bind(restored_id)
+            .bind(m.relation_id)
+            .bind(kept_work_id)
+            .bind(&m.role)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+            if updated == 0 {
+                // Member may have been deleted at merge due to PK conflict; re-insert.
+                let anchor = m.anchor_work_id.map(|a| {
+                    if a == restored_id {
+                        restored_id
+                    } else {
+                        a
+                    }
+                });
+                let _ = sqlx::query(
+                    r#"
+                    INSERT INTO relation_members
+                        (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+                    VALUES ($1, 'work', $2, $3::member_role, $4, $5)
+                    ON CONFLICT DO NOTHING
+                    "#,
+                )
+                .bind(m.relation_id)
+                .bind(restored_id)
+                .bind(&m.role)
+                .bind(anchor)
+                .bind(m.position)
+                .execute(&mut *tx)
+                .await;
+            }
+        }
+        if m.anchor_work_id == Some(restored_id) {
+            // Prefer rows whose entity still matches the snapshot.
+            let entity_id_for_update = if m.entity_kind == "work" && m.entity_id == restored_id {
+                restored_id
+            } else {
+                m.entity_id
+            };
+            sqlx::query(
+                r#"
+                UPDATE relation_members
+                SET anchor_work_id = $1
+                WHERE relation_id = $2
+                  AND entity_kind = $3::entity_kind
+                  AND entity_id = $4
+                  AND role = $5::member_role
+                  AND anchor_work_id = $6
+                "#,
+            )
+            .bind(restored_id)
+            .bind(m.relation_id)
+            .bind(&m.entity_kind)
+            .bind(entity_id_for_update)
+            .bind(&m.role)
+            .bind(kept_work_id)
+            .execute(&mut *tx)
+            .await?;
+            // Also try with entity_id still on kept for work-kind rows not yet moved.
+            if m.entity_kind == "work" && m.entity_id == restored_id {
+                sqlx::query(
+                    r#"
+                    UPDATE relation_members
+                    SET anchor_work_id = $1
+                    WHERE relation_id = $2
+                      AND entity_kind = 'work'
+                      AND entity_id = $3
+                      AND role = $4::member_role
+                      AND anchor_work_id = $5
+                    "#,
+                )
+                .bind(restored_id)
+                .bind(m.relation_id)
+                .bind(kept_work_id)
+                .bind(&m.role)
+                .bind(kept_work_id)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+    }
+
+    for pid in &snap.project_ids {
+        sqlx::query(
+            r#"
+            INSERT INTO work_projects (work_id, project_id)
+            VALUES ($1, $2) ON CONFLICT DO NOTHING
+            "#,
+        )
+        .bind(restored_id)
+        .bind(pid)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    for rs in &snap.reading_status {
+        sqlx::query(
+            r#"
+            INSERT INTO reading_status (user_id, work_id, status, starred, updated_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (user_id, work_id) DO NOTHING
+            "#,
+        )
+        .bind(rs.user_id)
+        .bind(restored_id)
+        .bind(rs.status)
+        .bind(rs.starred)
+        .bind(rs.updated_at)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Restore neighbors that involved the merged work. Kept-side folds stay as-is.
+    for n in &snap.neighbors {
+        sqlx::query(
+            r#"
+            INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+            VALUES ($1::neighbor_dimension, $2, $3, $4)
+            ON CONFLICT DO NOTHING
+            "#,
+        )
+        .bind(&n.dimension)
+        .bind(n.work_id)
+        .bind(n.neighbor_work_id)
+        .bind(n.score)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"UPDATE merge_history SET reverted_at = now() WHERE id = $1 AND reverted_at IS NULL"#,
+    )
+    .bind(hist.id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    get_work(pool, restored_id).await
+}
+
+async fn load_merge_history(
+    pool: &PgPool,
+    kept_work_id: Uuid,
+    merge_history_id: Option<Uuid>,
+    merged_work_id: Option<Uuid>,
+) -> AppResult<MergeHistoryRow> {
+    if let Some(hid) = merge_history_id {
+        let row = sqlx::query_as::<_, MergeHistoryRow>(
+            r#"
+            SELECT id, kept_work_id, merged_work_id, snapshot, merged_by, created_at, reverted_at
+            FROM merge_history WHERE id = $1
+            "#,
+        )
+        .bind(hid)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("merge_history {hid}")))?;
+        if row.kept_work_id != kept_work_id {
+            return Err(AppError::BadRequest(
+                "merge_history does not belong to this kept work".into(),
+            ));
+        }
+        if let Some(mid) = merged_work_id {
+            if row.merged_work_id != mid {
+                return Err(AppError::BadRequest(
+                    "merge_history.merged_work_id does not match request".into(),
+                ));
+            }
+        }
+        return Ok(row);
+    }
+
+    let mid = merged_work_id.expect("checked above");
+    sqlx::query_as::<_, MergeHistoryRow>(
+        r#"
+        SELECT id, kept_work_id, merged_work_id, snapshot, merged_by, created_at, reverted_at
+        FROM merge_history
+        WHERE kept_work_id = $1 AND merged_work_id = $2 AND reverted_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(mid)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::NotFound(format!(
+            "unreverted merge of {mid} into {kept_work_id}"
+        ))
+    })
 }

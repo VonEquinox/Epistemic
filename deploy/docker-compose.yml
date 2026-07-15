@@ -66,6 +66,8 @@ services:
       grobid:
         condition: service_started
 
+  # SPA: build with `cd web && npm ci && npm run build` (outputs web/dist).
+  # Caddyfile serves root * /srv with try_files SPA fallback.
   caddy:
     image: caddy:2
     ports:
@@ -73,6 +75,8 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Mount Vite production build so Caddy can serve the SPA from /srv.
+      - ../web/dist:/srv:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

@@ -73,3 +73,21 @@ export function bboxToViewport(
     height: Math.abs(y2 - y1),
   };
 }
+
+/** Convert a viewport CSS rect (relative to page) back to PDF-point bbox. */
+export function viewportRectToBBox(
+  rect: CssRect,
+  viewport: { convertToPdfPoint: (x: number, y: number) => number[] },
+): PdfBBox {
+  const [x1, y1] = viewport.convertToPdfPoint(rect.left, rect.top);
+  const [x2, y2] = viewport.convertToPdfPoint(
+    rect.left + rect.width,
+    rect.top + rect.height,
+  );
+  return {
+    x: Math.min(x1, x2),
+    y: Math.min(y1, y2),
+    w: Math.abs(x2 - x1),
+    h: Math.abs(y2 - y1),
+  };
+}
