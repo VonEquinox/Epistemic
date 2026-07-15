@@ -8,6 +8,8 @@ pub mod graph;
 pub mod pdf;
 pub mod evidence;
 pub mod claims;
+pub mod views;
+pub mod jobs_admin;
 
 use axum::routing::get;
 use axum::Router;
@@ -25,6 +27,8 @@ pub fn router() -> Router<AppState> {
         .merge(collab::router())
         .nest("/graph", graph::router())
         .nest("/versions", pdf::router())
+        .nest("/views", views::router())
+        .nest("/jobs", jobs_admin::router())
         // convenience: GET /works/{id}/evidence and /works/{id}/claims-full
         .route("/works/{id}/evidence", get(evidence::list_for_work))
         .route("/works/{id}/claims-full", get(claims::list_for_work))

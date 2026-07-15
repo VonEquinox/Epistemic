@@ -25,7 +25,7 @@ async fn map(
 #[derive(Debug, Deserialize)]
 pub struct EgoQuery {
     pub depth: Option<i32>,
-    #[allow(dead_code)]
+    /// explore | prerequisite | dispute | evolution
     pub mode: Option<String>,
 }
 
@@ -36,12 +36,17 @@ async fn ego(
     Query(q): Query<EgoQuery>,
 ) -> ApiResult<Json<graph::EgoResponse>> {
     let depth = q.depth.unwrap_or(1).clamp(1, 2);
-    // MVP: only work ego fully implemented
+    let mode = q.mode.as_deref().unwrap_or("explore");
     match kind.as_str() {
-        "work" => Ok(Json(graph::ego_work(&state.pool, id, depth).await?)),
-        _ => {
-            // Fallback: treat as work id for other kinds for now
-            Ok(Json(graph::ego_work(&state.pool, id, depth).await?))
+        "work" | "claim" | "method" | "dataset" => {
+            // MVP: claim/method/dataset resolve via their work when possible;
+            // for now treat id as work_id (claim ego refinement is post-M3).
+            Ok(Json(
+                graph::ego_work_mode(&state.pool, id, depth, mode).await?,
+            ))
         }
+        _ => Ok(Json(
+            graph::ego_work_mode(&state.pool, id, depth, mode).await?,
+        )),
     }
 }
