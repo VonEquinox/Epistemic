@@ -1,0 +1,33 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node / frontend
+web/node_modules/
+web/dist/
+web/.vite/
+web/src/api/generated/
+
+# Env & secrets
+.env
+.env.local
+*.pem
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Runtime data
+data/
+pdfs/
+*.log
+*.pdf
+!testset/**/*.pdf
+
+# Backups
+backups/
+*.dump
