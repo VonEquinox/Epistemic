@@ -13,7 +13,7 @@ epistemic/
 │   ├── crates/core/      # 领域类型、DB 访问（sqlx）、repository 函数
 │   ├── crates/api/       # axum HTTP API（bin）
 │   ├── crates/worker/    # 后台任务执行器（bin）
-│   └── crates/llm/       # Claude API 客户端、prompts、JSON schemas
+│   └── crates/llm/       # OpenAI Chat Completions 客户端、prompts、JSON schemas
 ├── web/                  # Vite + React + TypeScript SPA
 ├── deploy/               # docker-compose.yml、Caddyfile、备份脚本
 └── testset/              # 20—30 篇标注测试集（金标 JSON）
@@ -29,7 +29,7 @@ epistemic/
 | 数据 | PostgreSQL 16 + pgvector；全文检索用 Postgres FTS |
 | 任务队列 | Postgres jobs 表 + `FOR UPDATE SKIP LOCKED`，worker 为独立二进制 |
 | PDF 解析 | GROBID（docker 容器，HTTP 调用，保留 teiCoords 坐标） |
-| LLM | Claude API，reqwest 自封装薄客户端（无官方 Rust SDK，走原生 HTTP） |
+| LLM | OpenAI Chat Completions 兼容 API，reqwest 自封装薄客户端（原生 HTTP） |
 | 部署 | docker-compose 单机：caddy（自动 HTTPS）+ api + worker + postgres + grobid |
 
 ## 3. 系统架构
@@ -43,7 +43,7 @@ Caddy ──▶ api（axum）──▶ PostgreSQL（唯一事实源：实体/关
                 ▼  │
              worker（轮询 jobs 表）
                 ├──▶ GROBID（PDF → TEI）
-                ├──▶ Claude API（DNA 抽取 / 引文分类 / 成对判定）
+                ├──▶ Chat Completions API（DNA 抽取 / 引文分类 / 成对判定）
                 ├──▶ Semantic Scholar / arXiv API（元数据、参考文献）
                 └──▶ Embedding API（候选召回 + 主题引力，供应商未决）
 ```
@@ -238,62 +238,68 @@ worker 单进程多并发（tokio），按 kind 限流：LLM 类任务并发 ≤
 
 ## 8. LLM 集成
 
-### 8.1 模型与定价（2026-06 数据，动工时以官方为准）
+### 8.1 协议与供应商
 
-| 档位 | 模型 ID | 输入 / 输出（$ / MTok） |
-|---|---|---|
-| 默认（质量优先） | `claude-opus-4-8` | 5 / 25 |
-| 中间档 | `claude-sonnet-5` | 3 / 15（2026-08-31 前优惠 2 / 10） |
-| 低成本档 | `claude-haiku-4-5` | 1 / 5 |
+主协议：**OpenAI Chat Completions**（`POST {base}/v1/chat/completions`）。
 
-档位策略（未决 §14）：起步全用 `claude-opus-4-8` 跑测集建质量基线，再用 haiku / sonnet 对比人工接受率，用数据定档。
+- 鉴权：`Authorization: Bearer $OPENAI_API_KEY`
+- 环境变量：`OPENAI_API_KEY`（或 `LLM_API_KEY`）、`OPENAI_BASE_URL`（默认 `https://api.openai.com/v1`）、`OPENAI_MODEL`（默认 `gpt-4o`）
+- 兼容：OpenAI 官方、OpenRouter、vLLM、各类中转站（只要实现 chat/completions）
+
+模型 ID 与单价由部署方配置；`estimate_cost_usd` 仅作粗估。
 
 ### 8.2 强制 JSON（结构化输出）
 
-用 `output_config.format`（json_schema 类型）约束输出，API 保证返回合法 JSON：
+用 OpenAI `response_format` 约束输出：
 
 ```json
 {
-  "model": "claude-opus-4-8",
+  "model": "gpt-4o",
   "max_tokens": 8000,
-  "output_config": { "format": { "type": "json_schema", "schema": { ... } } },
-  "messages": [ ... ]
+  "messages": [
+    { "role": "system", "content": "..." },
+    { "role": "user", "content": "..." }
+  ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "epistemic_structured",
+      "strict": true,
+      "schema": { ... }
+    }
+  }
 }
 ```
 
-- schema 中所有 object 必须 `additionalProperties: false` 且列 `required`
-- 不支持 minLength / maximum 等约束——应用层二次校验（证据 span 非空、页码存在等），校验失败按"无证据"丢弃字段
+- schema 中所有 object 建议 `additionalProperties: false` 且列 `required`（严格模式要求）
+- 部分兼容网关若不支持 `json_schema`，客户端会对正文做宽松 JSON 解析（去 markdown fence）
+- 应用层二次校验（证据 span 非空、页码存在等），失败按「无证据」丢弃字段
 
-### 8.3 Batch API（批量导入用，五折）
+### 8.3 Batch API（批量导入）
 
-批量导入的 DNA 抽取和引文分类走 `/v1/messages/batches`：**token 费用 50%**，多数批次 1 小时内完成。`custom_id` = job id，轮询 `processing_status == "ended"` 后按 custom_id 回填。单批上限 10 万请求。交互式场景（单篇快速添加）走同步接口。
+批量 DNA 抽取走 **OpenAI Batch**：上传 JSONL → `POST /v1/batches`（`endpoint=/v1/chat/completions`）→ 轮询至 `completed` → 下载 `output_file_id` JSONL，按 `custom_id` 回填。成本通常约半价；窗口默认 24h。交互式单篇仍走同步 `chat/completions`。
 
-### 8.4 Prompt 缓存
+不支持 Batch 的兼容网关：仅用同步接口即可。
 
-抽取任务共享一个长而稳定的 system prompt（任务说明 + schema + 示例）。做成**固定前缀 ≥ 4096 tokens**（`claude-opus-4-8` 的最小可缓存长度，不足会静默不缓存），尾部加 `cache_control: {"type": "ephemeral"}`：缓存写 1.25×、读 0.1×。易失内容（论文正文）一律放在缓存断点之后。
+### 8.4 Prompt 组织
+
+抽取任务共享长 system prompt（任务说明 + 示例）；论文正文放 user 消息。prompt 模板与 schema 在 `crates/llm/prompts/`，版本号入库，改 prompt 必须升版本。
 
 ### 8.5 Rust 客户端约定
 
-- reqwest 薄封装；请求头：`x-api-key`、`anthropic-version: 2023-06-01`、`content-type: application/json`
-- **`claude-opus-4-8` 不接受 `temperature` / `top_p` / `top_k`（发了直接 400）**——不写这些字段；深度用 `output_config.effort` 控制（抽取任务 `low` 或 `medium`）
-- 429/5xx 指数退避重试并读 `retry-after` 头；4xx 不重试
+- crate：`epistemic-llm`，类型 `LlmClient`（旧名 `ClaudeClient` 仍为类型别名）
+- reqwest 薄封装；`content-type: application/json` + Bearer
+- 不强制发送 `temperature` / `top_p`（由模型/网关默认）
+- 429/5xx 指数退避并读 `retry-after`；4xx 不重试
 - 每次调用把 model、prompt_version、usage、成本记入 extractions / jobs
-- prompt 模板与 schema 放 `crates/llm/prompts/`，版本号入库，改 prompt 必须升版本
 
-### 8.6 成本量级（估算，以测集实测为准）
+### 8.6 成本量级
 
-按每篇：DNA ~12k 入 / 3k 出，引文分类 ~35 处 × (300 入 / 60 出)，成对判定 K=10 × (3k 入 / 300 出)，合计约 **52k 入 / 8k 出**：
-
-| 方案 | 每篇（Batch 五折后） | 1,000 篇 |
-|---|---|---|
-| 全 `claude-opus-4-8` | ≈ $0.23 | ≈ $230 |
-| 全 `claude-haiku-4-5` | ≈ $0.05 | ≈ $46 |
-
-一次性成本（每篇只抽一次并缓存）；prompt 缓存会进一步压低。
+按测集实测更新；`estimate_cost_usd` 对 gpt-4o / mini 等有占位单价。
 
 ### 8.7 Embedding
 
-Claude API 无 embedding 端点，需外部方案（未决 §14）：候选为 Voyage AI 一类托管 API，或本地小模型 sidecar。选择决定 pgvector 维度 D。用途：候选召回与主题引力，同一套向量复用。
+与 Chat Completions 解耦（未决 §14）：可用 OpenAI embeddings、Voyage 或本地 sidecar。选择决定 pgvector 维度 D。用途：候选召回与主题引力，同一套向量复用。
 
 ## 9. 距离引擎（服务端计算）
 
@@ -344,5 +350,5 @@ Claude API 无 embedding 端点，需外部方案（未决 §14）：候选为 V
 ## 14. 未决
 
 1. Embedding 供应商（Voyage API vs 本地 sidecar）→ 定 pgvector 维度
-2. LLM 档位策略（先全 opus-4-8 建基线，测集数据出来后定）
+2. LLM 模型档位策略（先用默认 `OPENAI_MODEL` 建基线，测集数据出来后定）
 3. 论文清单实际格式（同 PRD §11.2）→ 决定 /imports 解析器

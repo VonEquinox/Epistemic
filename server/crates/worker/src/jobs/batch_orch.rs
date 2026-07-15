@@ -67,7 +67,7 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
 
     tracing::info!(n = items.len(), "submitting DNA batch");
     let handle = llm.create_batch(items).await?;
-    tracing::info!(batch_id = %handle.id, status = %handle.processing_status, "batch submitted");
+    tracing::info!(batch_id = %handle.id, status = %handle.status, "batch submitted");
 
     // Re-enqueue poll job
     let payload = serde_json::json!({
@@ -88,15 +88,15 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
 
 async fn poll_and_apply(
     ctx: &JobContext,
-    llm: &epistemic_llm::ClaudeClient,
+    llm: &epistemic_llm::LlmClient,
     batch_id: &str,
     version_ids: &[Uuid],
 ) -> anyhow::Result<()> {
     let handle = llm.get_batch(batch_id).await?;
-    if handle.processing_status != "ended" {
+    if !handle.is_success_ended() {
         tracing::info!(
             batch_id,
-            status = %handle.processing_status,
+            status = %handle.status,
             "batch still running; re-queue"
         );
         let payload = serde_json::json!({

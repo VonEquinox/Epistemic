@@ -13,7 +13,7 @@
 | 后端 | Rust · axum · sqlx · tokio |
 | 数据 | PostgreSQL 16 + pgvector |
 | 解析 | GROBID |
-| LLM | Claude API |
+| LLM | OpenAI Chat Completions（兼容网关） |
 | 部署 | docker-compose + Caddy |
 
 ## 快速开始
@@ -44,7 +44,7 @@ server/               # Rust cargo workspace
   crates/core/        # 领域类型、DB、repository
   crates/api/         # axum HTTP API
   crates/worker/      # 后台任务执行器
-  crates/llm/         # Claude 客户端、prompts
+  crates/llm/         # Chat Completions 客户端、prompts
 web/                  # Vite + React SPA
 deploy/               # docker-compose、Caddy、备份
 testset/              # 标注测试集

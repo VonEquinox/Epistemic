@@ -30,9 +30,9 @@ async fn main() -> anyhow::Result<()> {
     let worker_id = format!("worker-{}", &Uuid::new_v4().to_string()[..8]);
     tracing::info!(%worker_id, "epistemic-worker starting");
 
-    let llm = epistemic_llm::ClaudeClient::from_env().ok();
+    let llm = epistemic_llm::LlmClient::from_env().ok();
     if llm.is_none() {
-        tracing::warn!("ANTHROPIC_API_KEY not set — DNA extraction jobs will fail");
+        tracing::warn!("OPENAI_API_KEY (or LLM_API_KEY) not set — DNA extraction jobs will fail");
     }
 
     let ctx = jobs::JobContext {

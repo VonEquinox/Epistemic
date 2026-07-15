@@ -19,7 +19,7 @@ pub struct JobContext {
     pub tei_dir: PathBuf,
     pub grobid_url: String,
     pub s2_api_key: Option<String>,
-    pub llm: Option<epistemic_llm::ClaudeClient>,
+    pub llm: Option<epistemic_llm::LlmClient>,
     pub http: reqwest::Client,
 }
 
