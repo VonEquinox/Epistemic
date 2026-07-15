@@ -1,0 +1,22 @@
+[package]
+name = "epistemic-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+regex = { workspace = true }
+url = { workspace = true }
+async-trait = { workspace = true }
+utoipa = { workspace = true }
