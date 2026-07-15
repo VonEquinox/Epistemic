@@ -1,8 +1,11 @@
+mod batch_orch;
+mod classify_cite;
 mod extract;
 mod fetch_pdf;
 mod grobid;
-mod resolve;
+mod propose;
 mod references;
+mod resolve;
 
 use epistemic_core::domain::{job_kind, Job};
 use sqlx::PgPool;
@@ -29,16 +32,13 @@ pub async fn dispatch(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         job_kind::FETCH_REFERENCES => references::run(ctx, job).await,
         job_kind::UPDATE_NEIGHBORS_CITATION => neighbors::update_citation(ctx, job).await,
         job_kind::UPDATE_NEIGHBORS_LINEAGE => neighbors::update_lineage(ctx, job).await,
-        job_kind::CLASSIFY_CITATION_CONTEXTS => {
-            tracing::info!("classify_citation_contexts: stub (M3)");
-            Ok(())
-        }
+        job_kind::CLASSIFY_CITATION_CONTEXTS => classify_cite::run(ctx, job).await,
+        job_kind::PROPOSE_PAIRS => propose::run(ctx, job).await,
+        job_kind::BATCH_ORCH => batch_orch::run(ctx, job).await,
         job_kind::EMBED => {
-            tracing::info!("embed: stub (needs embedding provider)");
-            Ok(())
-        }
-        job_kind::PROPOSE_PAIRS => {
-            tracing::info!("propose_pairs: stub (M3)");
+            // Embedding provider undecided (DEV.md §14). Keep stub so pipeline
+            // does not fail; propose_pairs uses citation/lineage recall instead.
+            tracing::info!("embed: stub (needs embedding provider — see DEV.md §14)");
             Ok(())
         }
         other => {
