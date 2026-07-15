@@ -373,11 +373,18 @@ pub async fn review_queue(pool: &PgPool, q: ReviewQueueQuery) -> AppResult<Vec<R
             .await?
         }
         (None, true) => {
+            // Default queue: conf ≥ 0.75, plus all high-risk types regardless of conf
+            // (PRD §6.4). Mid-band (0.5–0.75) available via ?all=true.
             sqlx::query_scalar(
                 r#"
                 SELECT r.id FROM relations r
                 WHERE r.review_status = 'unreviewed'
-                  AND r.source = 'ai_candidate' AND r.type NOT IN ('cites')
+                  AND r.source = 'ai_candidate'
+                  AND r.type NOT IN ('cites', 'version_of')
+                  AND (
+                    COALESCE(r.confidence, 0) >= 0.75
+                    OR r.type IN ('fails_to_reproduce', 'contradicts_claim')
+                  )
                 ORDER BY r.confidence DESC NULLS LAST, r.created_at
                 LIMIT $1 OFFSET $2
                 "#,

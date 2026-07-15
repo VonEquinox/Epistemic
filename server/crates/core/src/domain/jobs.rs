@@ -31,6 +31,7 @@ pub mod job_kind {
     pub const CLASSIFY_CITATION_CONTEXTS: &str = "classify_citation_contexts";
     pub const EMBED: &str = "embed";
     pub const PROPOSE_PAIRS: &str = "propose_pairs";
+    pub const BATCH_ORCH: &str = "batch_orch";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]

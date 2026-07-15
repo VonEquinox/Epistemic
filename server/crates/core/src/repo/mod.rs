@@ -9,6 +9,7 @@ pub mod annotations;
 pub mod graph;
 pub mod evidence;
 pub mod claims;
+pub mod views;
 
 // Explicit re-exports to avoid name clashes (get / list_for_work).
 pub use users::{
@@ -34,9 +35,10 @@ pub use relations::{
     NewEvidence, NewRelation, NewRelationMember, ReviewQueueQuery,
 };
 pub use graph::{
-    ego_work, map_data, trim_neighbors, upsert_neighbor, EgoEdge, EgoNode, EgoResponse, MapNode,
-    MapResponse, NeighborEntry,
+    ego_work, ego_work_mode, map_data, trim_neighbors, upsert_neighbor, EgoEdge, EgoGroup, EgoNode,
+    EgoResponse, MapEdge, MapNode, MapResponse, NeighborEntry,
 };
+pub use views::{create as create_view, delete as delete_view, get as get_view, list as list_views, SavedView};
 pub use evidence::{
     create as create_evidence, get as get_evidence, list_for_claim as list_evidence_for_claim,
     list_for_relation as list_evidence_for_relation, list_for_version as list_evidence_for_version,
