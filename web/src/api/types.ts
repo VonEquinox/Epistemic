@@ -156,25 +156,68 @@ export interface NeighborEntry {
   score: number;
 }
 
+export interface MapEdge {
+  relation_id: string;
+  source_work_id: string;
+  target_work_id: string;
+  relation_type: RelationType;
+  review_status: ReviewStatus;
+  source_layer: SourceLayer;
+  confidence?: number | null;
+  explanation: string;
+  review_count: number;
+}
+
 export interface MapResponse {
   nodes: MapNode[];
   neighbors: Record<string, Record<string, NeighborEntry[]>>;
+  /** Assertion relations for near-LOD; similarity never draws edges. */
+  edges?: MapEdge[];
+}
+
+export interface EgoNode {
+  id: string;
+  kind: string;
+  label: string;
+  work_id?: string | null;
+  group_key?: string | null;
+  group_count?: number | null;
+  score?: number | null;
+}
+
+export interface EgoEdge {
+  relation_id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: RelationType;
+  review_status: ReviewStatus;
+  source_layer: SourceLayer;
+  confidence?: number | null;
+  explanation: string;
+  review_count: number;
+  bundle_key?: string | null;
+}
+
+export interface EgoGroup {
+  key: string;
+  relation_type: RelationType;
+  direction: string;
+  count: number;
+  member_work_ids: string[];
 }
 
 export interface EgoResponse {
-  center: { id: string; kind: string; label: string; work_id?: string | null };
-  nodes: { id: string; kind: string; label: string; work_id?: string | null }[];
-  edges: {
-    relation_id: string;
-    source_id: string;
-    target_id: string;
-    relation_type: RelationType;
-    review_status: ReviewStatus;
-    source_layer: SourceLayer;
-    confidence?: number | null;
-    explanation: string;
-    review_count: number;
-  }[];
+  center: EgoNode;
+  nodes: EgoNode[];
+  edges: EgoEdge[];
+  groups?: EgoGroup[];
+}
+
+export interface SavedView {
+  id: string;
+  name: string;
+  weights: { citation_coupling?: number; method_lineage?: number; topic?: number };
+  created_at: string;
 }
 
 export interface Project {

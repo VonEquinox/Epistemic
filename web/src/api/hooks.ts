@@ -11,6 +11,7 @@ import type {
   User,
   WorkCard,
   WorkListItem,
+  SavedView,
 } from './types';
 
 export function useMe() {
@@ -73,11 +74,45 @@ export function useMap() {
   });
 }
 
-export function useEgo(kind: string, id: string | undefined, depth = 1) {
+export function useEgo(
+  kind: string,
+  id: string | undefined,
+  depth = 1,
+  mode: 'explore' | 'review' | 'write' = 'explore',
+) {
   return useQuery({
-    queryKey: ['graph', 'ego', kind, id, depth],
-    queryFn: () => api.get<EgoResponse>(`/graph/ego/${kind}/${id}?depth=${depth}`),
+    queryKey: ['graph', 'ego', kind, id, depth, mode],
+    queryFn: () =>
+      api.get<EgoResponse>(
+        `/graph/ego/${kind}/${id}?depth=${depth}&mode=${mode}`,
+      ),
     enabled: !!id,
+  });
+}
+
+export function useSavedViews() {
+  return useQuery({
+    queryKey: ['views'],
+    queryFn: () => api.get<SavedView[]>('/views'),
+  });
+}
+
+export function useCreateSavedView() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      name: string;
+      weights: { citation_coupling?: number; method_lineage?: number; topic?: number };
+    }) => api.post<SavedView>('/views', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['views'] }),
+  });
+}
+
+export function useDeleteSavedView() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/views/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['views'] }),
   });
 }
 
