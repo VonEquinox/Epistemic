@@ -94,6 +94,7 @@ export interface WorkCard {
   methods: Method[];
   reading: ReadingStatusRow[];
   annotations_count: number;
+  evidence: EvidenceSpan[];
 }
 
 export interface Annotation {
@@ -103,6 +104,7 @@ export interface Annotation {
   kind: 'note' | 'conjecture' | 'question';
   visibility: 'private' | 'team';
   body: string;
+  anchor?: unknown;
   created_at: string;
 }
 
@@ -188,4 +190,33 @@ export interface ImportBatch {
   parsed?: unknown;
   status: string;
   created_at: string;
+}
+
+
+export interface EvidenceSpan {
+  id: string;
+  relation_id?: string | null;
+  claim_id?: string | null;
+  extraction_field?: string | null;
+  version_id: string;
+  page: number;
+  text: string;
+  bbox?: unknown;
+  created_at: string;
+}
+
+export interface ClaimJudgment {
+  id: string;
+  claim_id: string;
+  user_id: string;
+  verdict: string;
+  conditions: string;
+  evidence_url?: string | null;
+  created_at: string;
+}
+
+export interface ClaimWithEvidence {
+  claim: Claim;
+  evidence: EvidenceSpan[];
+  judgments: ClaimJudgment[];
 }

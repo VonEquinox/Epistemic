@@ -188,3 +188,55 @@ export function useImportConfirm() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['works'] }),
   });
 }
+
+// ─── M2: evidence & claims ───────────────────────────────────────────────────
+
+export function useWorkEvidence(workId: string | undefined) {
+  return useQuery({
+    queryKey: ['evidence', 'work', workId],
+    queryFn: () => api.get<import('./types').EvidenceSpan[]>(`/works/${workId}/evidence`),
+    enabled: !!workId,
+  });
+}
+
+export function useClaimsFull(workId: string | undefined) {
+  return useQuery({
+    queryKey: ['claims-full', workId],
+    queryFn: () =>
+      api.get<import('./types').ClaimWithEvidence[]>(`/works/${workId}/claims-full`),
+    enabled: !!workId,
+  });
+}
+
+export function usePromoteClaim() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      work_id: string;
+      version_id: string;
+      claim_text: string;
+      source_text: string;
+      page: number;
+      bbox?: unknown;
+    }) => api.post('/claims/promote', body),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['work', vars.work_id] });
+      qc.invalidateQueries({ queryKey: ['claims-full', vars.work_id] });
+      qc.invalidateQueries({ queryKey: ['evidence', 'work', vars.work_id] });
+    },
+  });
+}
+
+export function useClaimJudgment(claimId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      verdict: string;
+      conditions?: string;
+      evidence_url?: string;
+    }) => api.post(`/claims/${claimId}/judgments`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['claims-full'] });
+    },
+  });
+}

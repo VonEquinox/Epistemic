@@ -61,6 +61,14 @@ export function EgoPage() {
             >
               去审核队列处理
             </Link>
+            {data?.center.work_id && (
+              <Link
+                to={`/papers/${data.center.work_id}`}
+                className="block text-accent text-xs hover:underline"
+              >
+                打开论文 PDF
+              </Link>
+            )}
           </aside>
         )}
       </div>

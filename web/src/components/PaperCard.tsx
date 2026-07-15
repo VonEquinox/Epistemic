@@ -1,4 +1,4 @@
-import type { WorkCard } from '../api/types';
+import type { EvidenceSpan, WorkCard } from '../api/types';
 import { StatusDot } from './StatusDot';
 import { useCreateAnnotation, useSetReading } from '../api/hooks';
 import { useState } from 'react';
@@ -6,11 +6,20 @@ import type { ReadingLevel } from '../api/types';
 
 const levels: ReadingLevel[] = ['unread', 'skimmed', 'read', 'reproduced', 'needs_review'];
 
-export function PaperCard({ card }: { card: WorkCard }) {
+export function PaperCard({
+  card,
+  onJumpEvidence,
+}: {
+  card: WorkCard;
+  onJumpEvidence?: (ev: EvidenceSpan) => void;
+}) {
   const v = card.primary_version;
   const setReading = useSetReading(card.work.id);
   const createAnn = useCreateAnnotation(card.work.id);
   const [note, setNote] = useState('');
+
+  const evidenceForClaim = (claimId: string) =>
+    (card.evidence ?? []).filter((e) => e.claim_id === claimId);
 
   return (
     <div className="space-y-6 text-sm">
@@ -26,6 +35,11 @@ export function PaperCard({ card }: { card: WorkCard }) {
             .filter(Boolean)
             .join(' · ')}
         </p>
+        {v?.pdf_path ? (
+          <p className="mt-1 text-xs text-emerald-600">已有 PDF</p>
+        ) : (
+          <p className="mt-1 text-xs text-ink-400">无 PDF</p>
+        )}
       </header>
 
       {v?.abstract_text && (
@@ -63,15 +77,29 @@ export function PaperCard({ card }: { card: WorkCard }) {
       {card.claims.length > 0 && (
         <section>
           <h2 className="font-medium text-ink-800 mb-2">Claims</h2>
-          <ul className="space-y-2">
-            {card.claims.map((c) => (
-              <li key={c.id} className="border-l-2 border-accent pl-3">
-                <p>{c.text}</p>
-                <p className="text-xs text-ink-400 mt-0.5">
-                  {c.source} · {c.review_status}
-                </p>
-              </li>
-            ))}
+          <ul className="space-y-3">
+            {card.claims.map((c) => {
+              const evs = evidenceForClaim(c.id);
+              return (
+                <li key={c.id} className="border-l-2 border-accent pl-3">
+                  <p>{c.text}</p>
+                  <p className="text-xs text-ink-400 mt-0.5">
+                    {c.source} · {c.review_status}
+                  </p>
+                  {evs.map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => onJumpEvidence?.(e)}
+                      className="mt-1 block text-left text-xs text-accent hover:underline"
+                    >
+                      证据 p.{e.page}: “{e.text.slice(0, 80)}
+                      {e.text.length > 80 ? '…' : ''}”
+                    </button>
+                  ))}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -80,14 +108,58 @@ export function PaperCard({ card }: { card: WorkCard }) {
         <section>
           <h2 className="font-medium text-ink-800 mb-2">方法</h2>
           <ul className="space-y-2">
-            {card.methods.map((m) => (
-              <li key={m.id}>
-                <span className="font-medium">{m.name}</span>
-                {m.description && (
-                  <span className="text-ink-600"> — {m.description}</span>
-                )}
-              </li>
-            ))}
+            {card.methods.map((m) => {
+              const evs = (card.evidence ?? []).filter(
+                (e) => e.extraction_field === `method:${m.name}`,
+              );
+              return (
+                <li key={m.id}>
+                  <span className="font-medium">{m.name}</span>
+                  {m.description && (
+                    <span className="text-ink-600"> — {m.description}</span>
+                  )}
+                  {evs.map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => onJumpEvidence?.(e)}
+                      className="mt-0.5 block text-left text-xs text-accent hover:underline"
+                    >
+                      证据 p.{e.page}
+                    </button>
+                  ))}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {(card.evidence ?? []).filter(
+        (e) => !e.claim_id && e.extraction_field && !e.extraction_field.startsWith('method:'),
+      ).length > 0 && (
+        <section>
+          <h2 className="font-medium text-ink-800 mb-2">字段证据</h2>
+          <ul className="space-y-1">
+            {(card.evidence ?? [])
+              .filter(
+                (e) =>
+                  !e.claim_id &&
+                  e.extraction_field &&
+                  !e.extraction_field.startsWith('method:'),
+              )
+              .map((e) => (
+                <li key={e.id}>
+                  <button
+                    type="button"
+                    onClick={() => onJumpEvidence?.(e)}
+                    className="text-xs text-left text-ink-600 hover:text-accent"
+                  >
+                    <span className="font-mono text-ink-400">{e.extraction_field}</span>{' '}
+                    p.{e.page}: {e.text.slice(0, 60)}
+                  </button>
+                </li>
+              ))}
           </ul>
         </section>
       )}

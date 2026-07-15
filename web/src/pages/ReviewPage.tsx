@@ -79,6 +79,14 @@ export function ReviewPage() {
               {item.evidence.length > 0 && (
                 <blockquote className="mt-2 text-xs text-ink-600 border-l-2 border-ink-200 pl-3 italic">
                   p.{item.evidence[0].page}: “{item.evidence[0].text}”
+                  {item.members.find((m) => m.role === 'source')?.anchor_work_id && (
+                    <a
+                      className="ml-2 not-italic text-accent hover:underline"
+                      href={`/papers/${item.members.find((m) => m.role === 'source')?.anchor_work_id}?page=${item.evidence[0].page}&evidence=${item.evidence[0].id}`}
+                    >
+                      跳到 PDF
+                    </a>
+                  )}
                 </blockquote>
               )}
               {active && (
