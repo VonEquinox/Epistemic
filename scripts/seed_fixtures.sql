@@ -98,14 +98,33 @@ BEGIN
     ON CONFLICT DO NOTHING;
 
     IF rec.arxiv_id = '1706.03762' THEN
-      INSERT INTO claims (work_id, text, source, review_status, model_version)
-      VALUES (wid,
-        'Self-attention alone is sufficient for state-of-the-art machine translation.',
-        'ai_candidate', 'unreviewed', 'fixture/dna_v1');
-      INSERT INTO methods (work_id, name, description, source, review_status, model_version)
-      VALUES (wid, 'Transformer',
-        'Encoder-decoder with multi-head self-attention',
-        'ai_candidate', 'unreviewed', 'fixture/dna_v1');
+      DECLARE
+        cid UUID;
+      BEGIN
+        INSERT INTO claims (work_id, text, source, review_status, model_version)
+        VALUES (wid,
+          'Self-attention alone is sufficient for state-of-the-art machine translation.',
+          'ai_candidate', 'unreviewed', 'fixture/dna_v1')
+        RETURNING id INTO cid;
+        INSERT INTO evidence_spans (claim_id, version_id, page, text, extraction_field, bbox)
+        VALUES (
+          cid, vid, 2,
+          'We propose a new simple network architecture, the Transformer, based solely on attention mechanisms',
+          'claim',
+          '{"x":72,"y":520,"w":450,"h":36}'::jsonb
+        );
+        INSERT INTO methods (work_id, name, description, source, review_status, model_version)
+        VALUES (wid, 'Transformer',
+          'Encoder-decoder with multi-head self-attention',
+          'ai_candidate', 'unreviewed', 'fixture/dna_v1');
+        INSERT INTO evidence_spans (version_id, page, text, extraction_field, bbox)
+        VALUES (
+          vid, 3,
+          'The Transformer follows this overall architecture using stacked self-attention and point-wise, fully connected layers',
+          'method:Transformer',
+          '{"x":72,"y":400,"w":450,"h":48}'::jsonb
+        );
+      END;
     END IF;
   END LOOP;
 
