@@ -1,0 +1,60 @@
+{
+  "arxiv_id": "1810.04805",
+  "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+  "year": 2019,
+  "dna": {
+    "claims": [
+      {
+        "text": "Bidirectional pre-training with MLM substantially improves fine-tuning based approaches on a wide range of NLP tasks.",
+        "source_text": "We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.",
+        "page": 1
+      }
+    ],
+    "methods": [
+      {
+        "name": "Masked Language Model (MLM)",
+        "source_text": "we mask some percentage of the input tokens at random, and then predict those masked tokens",
+        "page": 4
+      },
+      {
+        "name": "Next Sentence Prediction (NSP)",
+        "source_text": "we pre-train for a binarized next sentence prediction task",
+        "page": 4
+      }
+    ]
+  },
+  "relations": [
+    {
+      "type": "uses_method_from",
+      "aspect": null,
+      "target_arxiv": "1706.03762",
+      "explanation": "Uses Transformer encoder architecture from Vaswani et al.",
+      "evidence": [
+        {
+          "page": 3,
+          "text": "BERT's model architecture is a multi-layer bidirectional Transformer encoder based on the original implementation described in Vaswani et al."
+        }
+      ]
+    },
+    {
+      "type": "improves_on",
+      "aspect": "accuracy",
+      "target_arxiv": "1706.03762",
+      "explanation": "Adapts Transformer for bidirectional pretraining that beats prior unidirectional LMs on GLUE/SQuAD.",
+      "evidence": [
+        {
+          "page": 1,
+          "text": "BERT obtains new state-of-the-art results on eleven natural language processing tasks"
+        }
+      ]
+    }
+  ],
+  "citation_contexts": [
+    {
+      "cited_arxiv": "1706.03762",
+      "sentence": "BERT's model architecture is a multi-layer bidirectional Transformer encoder based on the original implementation described in Vaswani et al. (2017).",
+      "gold_type": "uses_method_from",
+      "confidence_band": "high"
+    }
+  ]
+}

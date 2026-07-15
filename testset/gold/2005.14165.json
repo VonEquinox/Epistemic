@@ -1,0 +1,48 @@
+{
+  "arxiv_id": "2005.14165",
+  "title": "Language Models are Few-Shot Learners",
+  "year": 2020,
+  "dna": {
+    "claims": [
+      {
+        "text": "Scaling up language models greatly improves task-agnostic, few-shot performance, sometimes even competitive with prior state-of-the-art fine-tuning approaches.",
+        "source_text": "We train GPT-3, an autoregressive language model with 175 billion parameters",
+        "page": 1
+      }
+    ],
+    "methods": [
+      {
+        "name": "In-context few-shot learning",
+        "source_text": "the model is given a few demonstrations of the task at inference time as conditioning",
+        "page": 4
+      }
+    ]
+  },
+  "relations": [
+    {
+      "type": "uses_method_from",
+      "aspect": null,
+      "target_arxiv": "1706.03762",
+      "explanation": "Autoregressive Transformer LM scaled to 175B parameters.",
+      "evidence": [
+        {
+          "page": 8,
+          "text": "We use the same model and architecture as GPT-2"
+        }
+      ]
+    },
+    {
+      "type": "improves_on",
+      "aspect": "generality",
+      "target_arxiv": "1810.04805",
+      "explanation": "Shows strong few-shot performance without task-specific fine-tuning required by BERT-style models.",
+      "evidence": [
+        {
+          "page": 1,
+          "text": "GPT-3 achieves strong performance on many NLP datasets, including translation, question-answering, and cloze tasks"
+        }
+      ]
+    }
+  ],
+  "citation_contexts": []
+}

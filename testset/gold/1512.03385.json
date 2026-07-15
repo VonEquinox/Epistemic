@@ -1,0 +1,36 @@
+{
+  "arxiv_id": "1512.03385",
+  "title": "Deep Residual Learning for Image Recognition",
+  "year": 2016,
+  "dna": {
+    "claims": [
+      {
+        "text": "Residual learning eases training of substantially deeper networks and yields accuracy gains from increased depth.",
+        "source_text": "We present a residual learning framework to ease the training of networks that are substantially deeper than those used previously.",
+        "page": 1
+      }
+    ],
+    "methods": [
+      {
+        "name": "Residual Block",
+        "source_text": "we explicitly reformulate the layers as learning residual functions with reference to the layer inputs",
+        "page": 2
+      }
+    ]
+  },
+  "relations": [
+    {
+      "type": "improves_on",
+      "aspect": "accuracy",
+      "target_arxiv": "1409.1556",
+      "explanation": "Deeper residual nets outperform VGG on ImageNet with lower complexity.",
+      "evidence": [
+        {
+          "page": 1,
+          "text": "Our residual nets are deeper, yet have lower complexity"
+        }
+      ]
+    }
+  ],
+  "citation_contexts": []
+}

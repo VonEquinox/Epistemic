@@ -1,0 +1,43 @@
+{
+  "arxiv_id": "2203.02155",
+  "title": "Training language models to follow instructions with human feedback",
+  "year": 2022,
+  "dna": {
+    "claims": [
+      {
+        "text": "Fine-tuning language models with human feedback (RLHF) improves alignment with user intent over GPT-3.",
+        "source_text": "We show an avenue for aligning language models with user intent on a wide range of tasks by fine-tuning with human feedback.",
+        "page": 1
+      }
+    ],
+    "methods": [
+      {
+        "name": "RLHF",
+        "source_text": "we use reinforcement learning from human feedback to fine-tune GPT-3",
+        "page": 3
+      }
+    ]
+  },
+  "relations": [
+    {
+      "type": "improves_on",
+      "aspect": "generality",
+      "target_arxiv": "2005.14165",
+      "explanation": "RLHF-tuned models preferred over GPT-3 outputs by human raters.",
+      "evidence": [
+        {
+          "page": 1,
+          "text": "Outputs from the 1.3B parameter InstructGPT model are preferred to outputs from the 175B GPT-3"
+        }
+      ]
+    },
+    {
+      "type": "uses_method_from",
+      "aspect": null,
+      "target_arxiv": "2005.14165",
+      "explanation": "Starts from GPT-3 base models.",
+      "evidence": [{ "page": 3, "text": "We start with a pretrained language model" }]
+    }
+  ],
+  "citation_contexts": []
+}

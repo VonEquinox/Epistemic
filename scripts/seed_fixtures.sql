@@ -1,4 +1,4 @@
--- Seed well-known ML papers as fixtures for UI development.
+-- Seed well-known ML papers as fixtures for UI development (M1–M3).
 -- Usage:
 --   1. Start API once with BOOTSTRAP_ADMIN_* so a user exists
 --   2. psql "$DATABASE_URL" -f scripts/seed_fixtures.sql
@@ -9,7 +9,6 @@ INSERT INTO projects (id, name, description)
 VALUES ('aaaaaaaa-bbbb-cccc-dddd-000000000001', 'Foundations', '经典基础论文')
 ON CONFLICT (id) DO NOTHING;
 
--- Create works/versions via a DO block
 DO $seed$
 DECLARE
   uid UUID;
@@ -17,12 +16,24 @@ DECLARE
   vid UUID;
   aid UUID;
   rid UUID;
+  cid UUID;
   attn UUID;
   bert UUID;
+  gpt3 UUID;
+  instruct UUID;
+  bahdanau UUID;
+  bpe UUID;
+  adam UUID;
+  resnet UUID;
+  vgg UUID;
+  vae UUID;
+  gan UUID;
   i INT;
   a TEXT;
   tnorm TEXT;
   rec RECORD;
+  src UUID;
+  tgt UUID;
 BEGIN
   SELECT id INTO uid FROM users ORDER BY created_at LIMIT 1;
   IF uid IS NULL THEN
@@ -97,42 +108,68 @@ BEGIN
     VALUES (wid, 'aaaaaaaa-bbbb-cccc-dddd-000000000001')
     ON CONFLICT DO NOTHING;
 
+    -- DNA samples for a few key papers
     IF rec.arxiv_id = '1706.03762' THEN
-      DECLARE
-        cid UUID;
-      BEGIN
-        INSERT INTO claims (work_id, text, source, review_status, model_version)
-        VALUES (wid,
-          'Self-attention alone is sufficient for state-of-the-art machine translation.',
-          'ai_candidate', 'unreviewed', 'fixture/dna_v1')
-        RETURNING id INTO cid;
-        INSERT INTO evidence_spans (claim_id, version_id, page, text, extraction_field, bbox)
-        VALUES (
-          cid, vid, 2,
-          'We propose a new simple network architecture, the Transformer, based solely on attention mechanisms',
-          'claim',
-          '{"x":72,"y":520,"w":450,"h":36}'::jsonb
-        );
-        INSERT INTO methods (work_id, name, description, source, review_status, model_version)
-        VALUES (wid, 'Transformer',
-          'Encoder-decoder with multi-head self-attention',
-          'ai_candidate', 'unreviewed', 'fixture/dna_v1');
-        INSERT INTO evidence_spans (version_id, page, text, extraction_field, bbox)
-        VALUES (
-          vid, 3,
-          'The Transformer follows this overall architecture using stacked self-attention and point-wise, fully connected layers',
-          'method:Transformer',
-          '{"x":72,"y":400,"w":450,"h":48}'::jsonb
-        );
-      END;
+      INSERT INTO claims (work_id, text, source, review_status, model_version)
+      VALUES (wid,
+        'Self-attention alone is sufficient for state-of-the-art machine translation.',
+        'ai_candidate', 'unreviewed', 'fixture/dna_v1')
+      RETURNING id INTO cid;
+      INSERT INTO evidence_spans (claim_id, version_id, page, text, extraction_field, bbox)
+      VALUES (
+        cid, vid, 2,
+        'We propose a new simple network architecture, the Transformer, based solely on attention mechanisms',
+        'claim',
+        '{"x":72,"y":520,"w":450,"h":36}'::jsonb
+      );
+      INSERT INTO methods (work_id, name, description, source, review_status, model_version)
+      VALUES (wid, 'Transformer',
+        'Encoder-decoder with multi-head self-attention',
+        'ai_candidate', 'unreviewed', 'fixture/dna_v1');
+      INSERT INTO evidence_spans (version_id, page, text, extraction_field, bbox)
+      VALUES (
+        vid, 3,
+        'The Transformer follows this overall architecture using stacked self-attention and point-wise, fully connected layers',
+        'method:Transformer',
+        '{"x":72,"y":400,"w":450,"h":48}'::jsonb
+      );
+    ELSIF rec.arxiv_id = '1810.04805' THEN
+      INSERT INTO claims (work_id, text, source, review_status, model_version)
+      VALUES (wid,
+        'Bidirectional pre-training substantially improves fine-tuning on a wide range of NLP tasks.',
+        'ai_candidate', 'unreviewed', 'fixture/dna_v1')
+      RETURNING id INTO cid;
+      INSERT INTO evidence_spans (claim_id, version_id, page, text, extraction_field)
+      VALUES (cid, vid, 1,
+        'BERT is designed to pre-train deep bidirectional representations',
+        'claim');
+      INSERT INTO methods (work_id, name, description, source, review_status, model_version)
+      VALUES (wid, 'Masked LM',
+        'Randomly mask tokens and predict them from bidirectional context',
+        'ai_candidate', 'unreviewed', 'fixture/dna_v1');
+    ELSIF rec.arxiv_id = '1512.03385' THEN
+      INSERT INTO methods (work_id, name, description, source, review_status, model_version)
+      VALUES (wid, 'Residual Block',
+        'Identity shortcut connections that ease optimization of deep nets',
+        'ai_candidate', 'confirmed', 'fixture/dna_v1');
     END IF;
   END LOOP;
 
-  SELECT w.id INTO attn FROM works w
-    JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1706.03762';
-  SELECT w.id INTO bert FROM works w
-    JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1810.04805';
+  -- Resolve work ids
+  SELECT w.id INTO attn FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1706.03762';
+  SELECT w.id INTO bert FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1810.04805';
+  SELECT w.id INTO gpt3 FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '2005.14165';
+  SELECT w.id INTO instruct FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '2203.02155';
+  SELECT w.id INTO bahdanau FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1409.0473';
+  SELECT w.id INTO bpe FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1508.07909';
+  SELECT w.id INTO adam FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1412.6980';
+  SELECT w.id INTO resnet FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1512.03385';
+  SELECT w.id INTO vgg FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1409.1556';
+  SELECT w.id INTO vae FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1312.6114';
+  SELECT w.id INTO gan FROM works w JOIN versions v ON v.id = w.primary_version_id WHERE v.arxiv_id = '1406.2661';
 
+  -- Helper: insert relation if missing (source improves/uses target)
+  -- BERT improves_on Attention
   IF attn IS NOT NULL AND bert IS NOT NULL
      AND NOT EXISTS (
        SELECT 1 FROM relations r
@@ -146,18 +183,331 @@ BEGIN
       'BERT applies bidirectional Transformer encoders for pretraining, improving downstream NLP accuracy.',
       0.88, 'ai_candidate', 'unreviewed', 'fixture')
     RETURNING id INTO rid;
-
     INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
     VALUES
       (rid, 'work', bert, 'source', bert, 0),
       (rid, 'work', attn, 'target', attn, 1);
-
     INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
     SELECT rid, v.id, 1,
-      'BERT is designed to pre-train deep bidirectional representations',
+      'BERT is designed to pre-train deep bidirectional representations by jointly conditioning on both left and right context',
       'relation'
     FROM versions v WHERE v.arxiv_id = '1810.04805';
   END IF;
+
+  -- Attention uses_method_from Bahdanau (attention mechanism lineage)
+  IF attn IS NOT NULL AND bahdanau IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM relations r
+       JOIN relation_members s ON s.relation_id = r.id AND s.role = 'source' AND s.entity_id = attn
+       JOIN relation_members t ON t.relation_id = r.id AND t.role = 'target' AND t.entity_id = bahdanau
+       WHERE r.type = 'uses_method_from'
+     )
+  THEN
+    INSERT INTO relations (type, aspect, explanation, confidence, source, review_status, model_version)
+    VALUES ('uses_method_from', NULL,
+      'Transformer multi-head attention generalizes the additive attention of Bahdanau et al.',
+      0.91, 'ai_candidate', 'unreviewed', 'fixture')
+    RETURNING id INTO rid;
+    INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+    VALUES
+      (rid, 'work', attn, 'source', attn, 0),
+      (rid, 'work', bahdanau, 'target', bahdanau, 1);
+    INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
+    SELECT rid, v.id, 2,
+      'An attention function can be described as mapping a query and a set of key-value pairs to an output',
+      'relation'
+    FROM versions v WHERE v.arxiv_id = '1706.03762';
+  END IF;
+
+  -- GPT-3 uses_method_from Attention
+  IF gpt3 IS NOT NULL AND attn IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM relations r
+       JOIN relation_members s ON s.relation_id = r.id AND s.role = 'source' AND s.entity_id = gpt3
+       JOIN relation_members t ON t.relation_id = r.id AND t.role = 'target' AND t.entity_id = attn
+       WHERE r.type = 'uses_method_from'
+     )
+  THEN
+    INSERT INTO relations (type, explanation, confidence, source, review_status, model_version)
+    VALUES ('uses_method_from',
+      'GPT-3 is a scaled-up Transformer decoder language model.',
+      0.95, 'ai_candidate', 'unreviewed', 'fixture')
+    RETURNING id INTO rid;
+    INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+    VALUES
+      (rid, 'work', gpt3, 'source', gpt3, 0),
+      (rid, 'work', attn, 'target', attn, 1);
+    INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
+    SELECT rid, v.id, 1,
+      'We use the same model and architecture as GPT-2, including the modified initialization, pre-normalization, and reversible tokenization',
+      'relation'
+    FROM versions v WHERE v.arxiv_id = '2005.14165';
+  END IF;
+
+  -- InstructGPT improves_on GPT-3
+  IF instruct IS NOT NULL AND gpt3 IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM relations r
+       JOIN relation_members s ON s.relation_id = r.id AND s.role = 'source' AND s.entity_id = instruct
+       JOIN relation_members t ON t.relation_id = r.id AND t.role = 'target' AND t.entity_id = gpt3
+       WHERE r.type = 'improves_on'
+     )
+  THEN
+    INSERT INTO relations (type, aspect, explanation, confidence, source, review_status, model_version)
+    VALUES ('improves_on', 'generality',
+      'RLHF fine-tuning improves instruction-following over base GPT-3.',
+      0.9, 'ai_candidate', 'unreviewed', 'fixture')
+    RETURNING id INTO rid;
+    INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+    VALUES
+      (rid, 'work', instruct, 'source', instruct, 0),
+      (rid, 'work', gpt3, 'target', gpt3, 1);
+    INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
+    SELECT rid, v.id, 1,
+      'We show an avenue for aligning language models with user intent on a wide range of tasks by fine-tuning with human feedback',
+      'relation'
+    FROM versions v WHERE v.arxiv_id = '2203.02155';
+  END IF;
+
+  -- ResNet improves_on VGG
+  IF resnet IS NOT NULL AND vgg IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM relations r
+       JOIN relation_members s ON s.relation_id = r.id AND s.role = 'source' AND s.entity_id = resnet
+       JOIN relation_members t ON t.relation_id = r.id AND t.role = 'target' AND t.entity_id = vgg
+       WHERE r.type = 'improves_on'
+     )
+  THEN
+    INSERT INTO relations (type, aspect, explanation, confidence, source, review_status, model_version)
+    VALUES ('improves_on', 'accuracy',
+      'Residual connections enable much deeper networks than VGG-style plain stacks, improving ImageNet accuracy.',
+      0.86, 'ai_candidate', 'unreviewed', 'fixture')
+    RETURNING id INTO rid;
+    INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+    VALUES
+      (rid, 'work', resnet, 'source', resnet, 0),
+      (rid, 'work', vgg, 'target', vgg, 1);
+    INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
+    SELECT rid, v.id, 1,
+      'We present a residual learning framework to ease the training of networks that are substantially deeper than those used previously',
+      'relation'
+    FROM versions v WHERE v.arxiv_id = '1512.03385';
+  END IF;
+
+  -- GAN alternative_to VAE
+  IF gan IS NOT NULL AND vae IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM relations r
+       JOIN relation_members s ON s.relation_id = r.id AND s.role = 'source' AND s.entity_id = gan
+       JOIN relation_members t ON t.relation_id = r.id AND t.role = 'target' AND t.entity_id = vae
+       WHERE r.type = 'alternative_to'
+     )
+  THEN
+    INSERT INTO relations (type, explanation, confidence, source, review_status, model_version)
+    VALUES ('alternative_to',
+      'GANs and VAEs are competing frameworks for generative modeling with different training objectives.',
+      0.72, 'ai_candidate', 'unreviewed', 'fixture')
+    RETURNING id INTO rid;
+    INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+    VALUES
+      (rid, 'work', gan, 'source', gan, 0),
+      (rid, 'work', vae, 'target', vae, 1);
+    INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
+    SELECT rid, v.id, 1,
+      'We propose a new framework for estimating generative models via an adversarial process',
+      'relation'
+    FROM versions v WHERE v.arxiv_id = '1406.2661';
+  END IF;
+
+  -- Attention compares_against Bahdanau (as baseline in MT)
+  IF attn IS NOT NULL AND bahdanau IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM relations r
+       JOIN relation_members s ON s.relation_id = r.id AND s.role = 'source' AND s.entity_id = attn
+       JOIN relation_members t ON t.relation_id = r.id AND t.role = 'target' AND t.entity_id = bahdanau
+       WHERE r.type = 'compares_against'
+     )
+  THEN
+    INSERT INTO relations (type, explanation, confidence, source, review_status, model_version)
+    VALUES ('compares_against',
+      'Transformer is evaluated against GNMT and ConvS2S; Bahdanau attention NMT is a classic baseline family.',
+      0.7, 'ai_candidate', 'unreviewed', 'fixture')
+    RETURNING id INTO rid;
+    INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+    VALUES
+      (rid, 'work', attn, 'source', attn, 0),
+      (rid, 'work', bahdanau, 'target', bahdanau, 1);
+    INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
+    SELECT rid, v.id, 8,
+      'On the WMT 2014 English-to-German translation task, our model outperforms the best previously reported models',
+      'relation'
+    FROM versions v WHERE v.arxiv_id = '1706.03762';
+  END IF;
+
+  -- Attention uses_method_from Adam (optimizer)
+  IF attn IS NOT NULL AND adam IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM relations r
+       JOIN relation_members s ON s.relation_id = r.id AND s.role = 'source' AND s.entity_id = attn
+       JOIN relation_members t ON t.relation_id = r.id AND t.role = 'target' AND t.entity_id = adam
+       WHERE r.type = 'uses_method_from'
+     )
+  THEN
+    INSERT INTO relations (type, explanation, confidence, source, review_status, model_version)
+    VALUES ('uses_method_from',
+      'Transformer training uses Adam optimizer with a custom learning-rate schedule.',
+      0.93, 'ai_candidate', 'unreviewed', 'fixture')
+    RETURNING id INTO rid;
+    INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+    VALUES
+      (rid, 'work', attn, 'source', attn, 0),
+      (rid, 'work', adam, 'target', adam, 1);
+    INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
+    SELECT rid, v.id, 7,
+      'We used the Adam optimizer with β1 = 0.9, β2 = 0.98 and ε = 10−9',
+      'relation'
+    FROM versions v WHERE v.arxiv_id = '1706.03762';
+  END IF;
+
+  -- BPE prerequisite_for Attention (subword units common prior)
+  IF bpe IS NOT NULL AND attn IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM relations r
+       JOIN relation_members s ON s.relation_id = r.id AND s.role = 'source' AND s.entity_id = bpe
+       JOIN relation_members t ON t.relation_id = r.id AND t.role = 'target' AND t.entity_id = attn
+       WHERE r.type = 'prerequisite_for'
+     )
+  THEN
+    INSERT INTO relations (type, explanation, confidence, source, review_status, model_version)
+    VALUES ('prerequisite_for',
+      'Byte-pair encoding / subword units are standard background for reading modern NMT including Transformer.',
+      0.65, 'ai_candidate', 'unreviewed', 'fixture')
+    RETURNING id INTO rid;
+    INSERT INTO relation_members (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
+    VALUES
+      (rid, 'work', bpe, 'source', bpe, 0),
+      (rid, 'work', attn, 'target', attn, 1);
+    INSERT INTO evidence_spans (relation_id, version_id, page, text, extraction_field)
+    SELECT rid, v.id, 1,
+      'We introduce a simpler and more effective approach, making open-vocabulary NMT possible via BPE',
+      'relation'
+    FROM versions v WHERE v.arxiv_id = '1508.07909';
+  END IF;
+
+  -- Citations (for citation_coupling neighbors)
+  -- Attention cites Bahdanau, Adam, BPE
+  IF attn IS NOT NULL AND bahdanau IS NOT NULL THEN
+    INSERT INTO citations (citing_work_id, cited_work_id)
+    SELECT attn, bahdanau
+    WHERE NOT EXISTS (
+      SELECT 1 FROM citations WHERE citing_work_id = attn AND cited_work_id = bahdanau
+    );
+  END IF;
+  IF attn IS NOT NULL AND adam IS NOT NULL THEN
+    INSERT INTO citations (citing_work_id, cited_work_id)
+    SELECT attn, adam
+    WHERE NOT EXISTS (
+      SELECT 1 FROM citations WHERE citing_work_id = attn AND cited_work_id = adam
+    );
+  END IF;
+  IF attn IS NOT NULL AND bpe IS NOT NULL THEN
+    INSERT INTO citations (citing_work_id, cited_work_id)
+    SELECT attn, bpe
+    WHERE NOT EXISTS (
+      SELECT 1 FROM citations WHERE citing_work_id = attn AND cited_work_id = bpe
+    );
+  END IF;
+  IF bert IS NOT NULL AND attn IS NOT NULL THEN
+    INSERT INTO citations (citing_work_id, cited_work_id)
+    SELECT bert, attn
+    WHERE NOT EXISTS (
+      SELECT 1 FROM citations WHERE citing_work_id = bert AND cited_work_id = attn
+    );
+  END IF;
+  IF gpt3 IS NOT NULL AND attn IS NOT NULL THEN
+    INSERT INTO citations (citing_work_id, cited_work_id)
+    SELECT gpt3, attn
+    WHERE NOT EXISTS (
+      SELECT 1 FROM citations WHERE citing_work_id = gpt3 AND cited_work_id = attn
+    );
+  END IF;
+  IF instruct IS NOT NULL AND gpt3 IS NOT NULL THEN
+    INSERT INTO citations (citing_work_id, cited_work_id)
+    SELECT instruct, gpt3
+    WHERE NOT EXISTS (
+      SELECT 1 FROM citations WHERE citing_work_id = instruct AND cited_work_id = gpt3
+    );
+  END IF;
+  IF resnet IS NOT NULL AND vgg IS NOT NULL THEN
+    INSERT INTO citations (citing_work_id, cited_work_id)
+    SELECT resnet, vgg
+    WHERE NOT EXISTS (
+      SELECT 1 FROM citations WHERE citing_work_id = resnet AND cited_work_id = vgg
+    );
+  END IF;
+
+  -- Seed method_lineage neighbors for a few pairs so the map has springs
+  IF attn IS NOT NULL AND bahdanau IS NOT NULL THEN
+    INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+    VALUES
+      ('method_lineage', attn, bahdanau, 1.0),
+      ('method_lineage', bahdanau, attn, 1.0)
+    ON CONFLICT (dimension, work_id, neighbor_work_id) DO UPDATE SET score = EXCLUDED.score;
+  END IF;
+  IF bert IS NOT NULL AND attn IS NOT NULL THEN
+    INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+    VALUES
+      ('method_lineage', bert, attn, 1.0),
+      ('method_lineage', attn, bert, 1.0),
+      ('citation_coupling', bert, attn, 0.8),
+      ('citation_coupling', attn, bert, 0.8)
+    ON CONFLICT (dimension, work_id, neighbor_work_id) DO UPDATE SET score = EXCLUDED.score;
+  END IF;
+  IF gpt3 IS NOT NULL AND attn IS NOT NULL THEN
+    INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+    VALUES
+      ('method_lineage', gpt3, attn, 1.0),
+      ('method_lineage', attn, gpt3, 1.0),
+      ('citation_coupling', gpt3, attn, 0.75),
+      ('citation_coupling', attn, gpt3, 0.75)
+    ON CONFLICT (dimension, work_id, neighbor_work_id) DO UPDATE SET score = EXCLUDED.score;
+  END IF;
+  IF instruct IS NOT NULL AND gpt3 IS NOT NULL THEN
+    INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+    VALUES
+      ('method_lineage', instruct, gpt3, 1.0),
+      ('method_lineage', gpt3, instruct, 1.0)
+    ON CONFLICT (dimension, work_id, neighbor_work_id) DO UPDATE SET score = EXCLUDED.score;
+  END IF;
+  IF resnet IS NOT NULL AND vgg IS NOT NULL THEN
+    INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+    VALUES
+      ('method_lineage', resnet, vgg, 1.0),
+      ('method_lineage', vgg, resnet, 1.0),
+      ('citation_coupling', resnet, vgg, 0.7),
+      ('citation_coupling', vgg, resnet, 0.7)
+    ON CONFLICT (dimension, work_id, neighbor_work_id) DO UPDATE SET score = EXCLUDED.score;
+  END IF;
+  IF gan IS NOT NULL AND vae IS NOT NULL THEN
+    INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
+    VALUES
+      ('method_lineage', gan, vae, 0.5),
+      ('method_lineage', vae, gan, 0.5)
+    ON CONFLICT (dimension, work_id, neighbor_work_id) DO UPDATE SET score = EXCLUDED.score;
+  END IF;
+
+  -- Sample reading status so map overlay has readers
+  IF attn IS NOT NULL THEN
+    INSERT INTO reading_status (user_id, work_id, status, starred)
+    VALUES (uid, attn, 'read', true)
+    ON CONFLICT (user_id, work_id) DO NOTHING;
+  END IF;
+  IF bert IS NOT NULL THEN
+    INSERT INTO reading_status (user_id, work_id, status, starred)
+    VALUES (uid, bert, 'skimmed', false)
+    ON CONFLICT (user_id, work_id) DO NOTHING;
+  END IF;
+
 END
 $seed$;
 

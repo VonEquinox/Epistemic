@@ -1,0 +1,23 @@
+{
+  "arxiv_id": "1409.0473",
+  "title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+  "year": 2015,
+  "dna": {
+    "claims": [
+      {
+        "text": "A soft-search attention mechanism allows the model to align and translate jointly, alleviating the fixed-length context bottleneck.",
+        "source_text": "We conjecture that the use of a fixed-length vector is a bottleneck in improving the performance of this basic encoder–decoder architecture",
+        "page": 1
+      }
+    ],
+    "methods": [
+      {
+        "name": "Soft Attention Alignment",
+        "source_text": "the model soft-searches for a set of positions in a source sentence",
+        "page": 3
+      }
+    ]
+  },
+  "relations": [],
+  "citation_contexts": []
+}

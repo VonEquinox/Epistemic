@@ -1,0 +1,67 @@
+{
+  "arxiv_id": "1706.03762",
+  "title": "Attention Is All You Need",
+  "year": 2017,
+  "dna": {
+    "claims": [
+      {
+        "text": "The Transformer, based solely on attention mechanisms, achieves new state-of-the-art translation quality while being more parallelizable.",
+        "source_text": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+        "page": 1
+      }
+    ],
+    "methods": [
+      {
+        "name": "Multi-Head Self-Attention",
+        "source_text": "Multi-head attention allows the model to jointly attend to information from different representation subspaces",
+        "page": 4
+      },
+      {
+        "name": "Positional Encoding",
+        "source_text": "we add \"positional encodings\" to the input embeddings at the bottoms of the encoder and decoder stacks",
+        "page": 6
+      }
+    ]
+  },
+  "relations": [
+    {
+      "type": "uses_method_from",
+      "aspect": null,
+      "target_arxiv": "1409.0473",
+      "explanation": "Builds on Bahdanau-style attention but removes recurrence and uses pure multi-head self-attention.",
+      "evidence": [
+        {
+          "page": 2,
+          "text": "Attention mechanisms have become an integral part of compelling sequence modeling and transduction models"
+        }
+      ]
+    },
+    {
+      "type": "uses_method_from",
+      "aspect": null,
+      "target_arxiv": "1412.6980",
+      "explanation": "Trains with Adam optimizer.",
+      "evidence": [{ "page": 7, "text": "We used the Adam optimizer" }]
+    },
+    {
+      "type": "improves_on",
+      "aspect": "accuracy",
+      "target_arxiv": "1409.0473",
+      "explanation": "Outperforms prior attentional NMT on WMT English-to-German and English-to-French.",
+      "evidence": [
+        {
+          "page": 8,
+          "text": "On the WMT 2014 English-to-German translation task, the big transformer model outperforms the best previously reported models"
+        }
+      ]
+    }
+  ],
+  "citation_contexts": [
+    {
+      "cited_arxiv": "1409.0473",
+      "sentence": "Attention mechanisms have become an integral part of compelling sequence modeling and transduction models in various tasks, allowing modeling of dependencies without regard to their distance in the input or output sequences [2].",
+      "gold_type": "uses_method_from",
+      "confidence_band": "high"
+    }
+  ]
+}
