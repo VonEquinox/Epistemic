@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["classifications"],
+  "properties": {
+    "classifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["context_id", "type", "aspect", "explanation", "evidence_text", "confidence"],
+        "properties": {
+          "context_id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": [
+              "uses_method_from",
+              "improves_on",
+              "alternative_to",
+              "uses_dataset_from",
+              "compares_against",
+              "reproduces",
+              "fails_to_reproduce",
+              "supports_claim",
+              "contradicts_claim",
+              "prerequisite_for",
+              "none"
+            ]
+          },
+          "aspect": { "type": ["string", "null"] },
+          "explanation": { "type": "string" },
+          "evidence_text": { "type": "string" },
+          "confidence": { "type": "number" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["relations"],
+  "properties": {
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "source_paper",
+          "target_paper",
+          "aspect",
+          "explanation",
+          "evidence_quote",
+          "evidence_from",
+          "confidence"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "uses_method_from",
+              "improves_on",
+              "alternative_to",
+              "uses_dataset_from",
+              "compares_against",
+              "reproduces",
+              "fails_to_reproduce",
+              "supports_claim",
+              "contradicts_claim",
+              "prerequisite_for"
+            ]
+          },
+          "source_paper": {
+            "type": "string",
+            "enum": ["A", "B"]
+          },
+          "target_paper": {
+            "type": "string",
+            "enum": ["A", "B"]
+          },
+          "aspect": { "type": ["string", "null"] },
+          "explanation": { "type": "string" },
+          "evidence_quote": { "type": "string" },
+          "evidence_from": {
+            "type": "string",
+            "enum": ["A", "B"]
+          },
+          "confidence": { "type": "number" }
+        }
+      }
+    }
+  }
+}

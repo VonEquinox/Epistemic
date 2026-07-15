@@ -49,6 +49,18 @@ impl ClaudeClient {
         &self.default_model
     }
 
+    pub(crate) fn http(&self) -> &Client {
+        &self.http
+    }
+
+    pub(crate) fn api_key(&self) -> &str {
+        &self.api_key
+    }
+
+    pub(crate) fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     pub async fn messages(&self, req: MessagesRequest) -> Result<MessagesResponse, LlmError> {
         let mut attempt = 0u32;
         loop {
