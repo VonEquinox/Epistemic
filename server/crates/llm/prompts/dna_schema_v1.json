@@ -1,0 +1,84 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["research_question", "contributions", "methods", "datasets", "claims", "limitations"],
+  "properties": {
+    "research_question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "source_text", "page"],
+      "properties": {
+        "text": { "type": "string" },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "contributions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source_text", "page"],
+        "properties": {
+          "text": { "type": "string" },
+          "source_text": { "type": "string" },
+          "page": { "type": "integer" }
+        }
+      }
+    },
+    "methods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "description", "source_text", "page"],
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "source_text": { "type": "string" },
+          "page": { "type": "integer" },
+          "parent": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "datasets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "source_text", "page"],
+        "properties": {
+          "name": { "type": "string" },
+          "source_text": { "type": "string" },
+          "page": { "type": "integer" }
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source_text", "page"],
+        "properties": {
+          "text": { "type": "string" },
+          "source_text": { "type": "string" },
+          "page": { "type": "integer" }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source_text", "page"],
+        "properties": {
+          "text": { "type": "string" },
+          "source_text": { "type": "string" },
+          "page": { "type": "integer" }
+        }
+      }
+    }
+  }
+}
