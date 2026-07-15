@@ -7,6 +7,8 @@ pub mod imports;
 pub mod relations;
 pub mod annotations;
 pub mod graph;
+pub mod evidence;
+pub mod claims;
 
 // Explicit re-exports to avoid name clashes (get / list_for_work).
 pub use users::{
@@ -34,4 +36,13 @@ pub use relations::{
 pub use graph::{
     ego_work, map_data, trim_neighbors, upsert_neighbor, EgoEdge, EgoNode, EgoResponse, MapNode,
     MapResponse, NeighborEntry,
+};
+pub use evidence::{
+    create as create_evidence, get as get_evidence, list_for_claim as list_evidence_for_claim,
+    list_for_relation as list_evidence_for_relation, list_for_version as list_evidence_for_version,
+    list_for_work as list_evidence_for_work, NewEvidenceSpan,
+};
+pub use claims::{
+    add_judgment, create as create_claim, get_with_evidence as get_claim,
+    list_with_evidence_for_work, promote_from_selection, ClaimWithEvidence, NewClaim,
 };

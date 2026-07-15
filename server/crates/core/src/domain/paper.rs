@@ -158,4 +158,5 @@ pub struct WorkCard {
     pub methods: Vec<super::Method>,
     pub reading: Vec<super::ReadingStatusRow>,
     pub annotations_count: i64,
+    pub evidence: Vec<super::EvidenceSpan>,
 }

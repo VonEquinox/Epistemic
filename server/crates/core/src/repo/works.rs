@@ -407,6 +407,7 @@ pub async fn get_work_card(pool: &PgPool, work_id: Uuid) -> AppResult<WorkCard> 
             .bind(work_id)
             .fetch_one(pool)
             .await?;
+    let evidence = crate::repo::evidence::list_for_work(pool, work_id).await?;
 
     Ok(WorkCard {
         work,
@@ -418,6 +419,7 @@ pub async fn get_work_card(pool: &PgPool, work_id: Uuid) -> AppResult<WorkCard> 
         methods,
         reading: reading_rows,
         annotations_count,
+        evidence,
     })
 }
 
