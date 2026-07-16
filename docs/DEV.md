@@ -28,9 +28,9 @@ epistemic/
 | API 契约 | utoipa 生成 openapi.json → openapi-typescript 生成前端类型化客户端 |
 | 数据 | PostgreSQL 16 + pgvector；全文检索用 Postgres FTS |
 | 任务队列 | Postgres jobs 表 + `FOR UPDATE SKIP LOCKED`，worker 为独立二进制 |
-| PDF 解析 | GROBID（docker 容器，HTTP 调用，保留 teiCoords 坐标） |
+| PDF 解析 | 已移除 GROBID；当前 DNA 用标题/摘要 + LLM。可选读历史 TEI；全文/坐标解析待接（VLM 或其它） |
 | LLM | OpenAI Chat Completions 兼容 API，reqwest 自封装薄客户端（原生 HTTP） |
-| 部署 | docker-compose 单机：caddy（自动 HTTPS）+ api + worker + postgres + grobid |
+| 部署 | docker-compose 单机：caddy（自动 HTTPS）+ api + worker + postgres |
 
 ## 3. 系统架构
 
@@ -42,9 +42,8 @@ Caddy ──▶ api（axum）──▶ PostgreSQL（唯一事实源：实体/关
         写 jobs │  │ 读写实体
                 ▼  │
              worker（轮询 jobs 表）
-                ├──▶ GROBID（PDF → TEI）
                 ├──▶ Chat Completions API（DNA 抽取 / 引文分类 / 成对判定）
-                ├──▶ Semantic Scholar / arXiv API（元数据、参考文献）
+                ├──▶ arXiv API（元数据）；参考文献需其它来源（GROBID 已移除）
                 └──▶ Embedding API（候选召回 + 主题引力，供应商未决）
 ```
 
@@ -206,7 +205,7 @@ web/src/
 
 ### 6.5 PDF 阅读器与证据跳转
 
-- PDF.js 渲染；证据 = {page, bbox}（GROBID teiCoords，PDF 点坐标），用页面 viewport transform 换算后在高亮层画矩形
+- PDF.js 渲染；证据 = {page, bbox}（PDF 点坐标；原 GROBID teiCoords 来源已移除，现靠模型输出或人工），用页面 viewport transform 换算后在高亮层画矩形
 - 点击卡片字段 / 图边证据 → 滚动到对应页 + 闪烁高亮
 - 批注锚点同时存文字引文 + bbox（bbox 失效时按文字回退定位）
 - 划选文字弹出批注气泡：选类型（笔记 / 猜想 / 问题）+ 可见性；一键"升格为 Claim / 关系证据"
@@ -225,14 +224,14 @@ web/src/
 每篇论文导入后的任务链（每步一行 jobs 记录，失败指数退避重试，≤3 次）：
 
 ```
-resolve_metadata → fetch_pdf(仅 arXiv 自动) → grobid_parse → extract_dna
-      │                                                        │
-      └─▶ fetch_references ─▶ update_neighbors(citation_coupling)
-                                                               ├─▶ classify_citation_contexts
-                                                               ├─▶ embed
-                                                               └─▶ propose_pairs(向量召回 K≈10 → 成对判定)
+resolve_metadata → fetch_pdf(仅 arXiv 自动) → extract_dna
+      │                                          │
+      └─▶ fetch_references（无解析器时多为空）    ├─▶ classify_citation_contexts（无 TEI 则跳过）
+           └─▶ update_neighbors(citation_coupling)├─▶ embed
+                                                 └─▶ propose_pairs(向量召回 K≈10 → 成对判定)
 事件触发：关系 确认/拒绝/新候选 ─▶ update_neighbors(method_lineage, 增量 BFS ≤4 跳)
 ```
+
 
 worker 单进程多并发（tokio），按 kind 限流：LLM 类任务并发 ≤4，元数据 API 遵守对方限速。论文卡片显示管线进度（哪步完成、哪步失败可重跑）。
 
@@ -325,7 +324,7 @@ worker 单进程多并发（tokio），按 kind 限流：LLM 类任务并发 ≤
 |---|---|
 | A 后端内核 | schema/migrations、认证邀请、works/versions/projects CRUD、清单解析与去重家族、图查询（map/ego 聚合）、OpenAPI 导出 |
 | B 前端 | §6 全部：地图 + Ego、卡片、PDF 阅读器、审核队列、列表、overlay |
-| C AI 管线 + 距离引擎 | worker 框架、GROBID 接入、prompts 与 schemas、Batch 编排、引文分类、embedding、距离维度、测集与评估脚本 |
+| C AI 管线 + 距离引擎 | worker 框架、prompts 与 schemas、Batch 编排、引文分类、embedding、距离维度、测集与评估脚本（PDF 全文解析已砍 GROBID，待替代） |
 
 契约：A 产出 openapi.json → B 生成类型化客户端；A 先交付 **10 篇样例论文的 fixture 数据**（含 DNA、关系、证据），B 不等 C 的真实管线即可开发全部 UI；C 通过 core crate 的 repository 函数写库，不直接拼 SQL。
 
@@ -334,7 +333,7 @@ worker 单进程多并发（tokio），按 kind 限流：LLM 类任务并发 ≤
 | 阶段 | A 后端 | B 前端 | C AI 管线 |
 |---|---|---|---|
 | M0 | schema SQL 草稿、repo 骨架、docker-compose | 原型图（地图/卡片/队列线框） | 标注 20—30 篇测集、写金标 JSON |
-| M1 | 认证邀请、导入解析、元数据、去重家族、列表 API、fixtures | 列表、卡片（吃 fixture）、阅读状态 UI | worker 框架、GROBID 跑通、元数据任务 |
+| M1 | 认证邀请、导入解析、元数据、去重家族、列表 API、fixtures | 列表、卡片（吃 fixture）、阅读状态 UI | worker 框架、元数据任务（GROBID 已移除） |
 | M2 | 证据/claim 存储、PDF 端点 | PDF 阅读器、高亮、证据跳转 | DNA 抽取 + 结构化输出 + 过测集门槛 |
 | M3 | 图查询 API、neighbors 表、审核 API | 全局地图 + Ego + 审核队列 + overlay | 引文分类、成对判定、两维距离、Batch 编排 |
 | M4 | 修 bug、备份上线 | 打磨交互 | 接受率统计、prompt 迭代 |

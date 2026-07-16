@@ -1,7 +1,8 @@
 //! Citation context classification — PRD §6.3 path 1 (primary).
 //!
-//! Parse GROBID TEI for `<ref type="bibr">` contexts, batch them to Claude,
+//! Parse legacy TEI (if any) for `<ref type="bibr">` contexts, batch them to the LLM,
 //! and write ai_candidate relations with evidence spans for confidence ≥ 0.5.
+//! Without TEI (GROBID removed), this job no-ops into propose_pairs.
 
 use super::{version_id, work_id, JobContext};
 use epistemic_core::domain::{

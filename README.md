@@ -12,7 +12,7 @@
 | 前端 | Vite · React · TypeScript · Cytoscape.js · PDF.js |
 | 后端 | Rust · axum · sqlx · tokio |
 | 数据 | PostgreSQL 16 + pgvector |
-| 解析 | GROBID |
+| 解析 | 无 GROBID（PDF 存盘；DNA 暂用标题/摘要 + LLM；可后续接 VLM） |
 | LLM | OpenAI Chat Completions（兼容网关） |
 | 部署 | docker-compose + Caddy |
 
@@ -22,8 +22,8 @@
 # 1. 复制环境变量
 cp .env.example .env
 
-# 2. 启动依赖（Postgres + GROBID）
-cd deploy && docker compose up -d postgres grobid
+# 2. 启动依赖（Postgres）
+cd deploy && docker compose up -d postgres
 
 # 3. 后端
 cd ../server
@@ -56,4 +56,4 @@ testset/              # 标注测试集
 |---|---|
 | A 后端内核 | schema、认证、CRUD、图查询、OpenAPI |
 | B 前端 | 地图 / Ego / 卡片 / PDF / 审核队列 |
-| C AI 管线 | worker、GROBID、prompts、距离引擎、测集 |
+| C AI 管线 | worker、prompts、距离引擎、测集（PDF 全文解析待接） |

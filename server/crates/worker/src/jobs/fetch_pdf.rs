@@ -1,7 +1,6 @@
 use super::{version_id, JobContext};
 use epistemic_core::domain::{job_kind, Job};
 use epistemic_core::repo::{jobs, works};
-use std::path::Path;
 
 pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     let vid = version_id(job)?;
@@ -24,12 +23,11 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     works::update_version_paths(&ctx.pool, vid, Some(&rel), None).await?;
     tracing::info!(path = %dest.display(), "PDF saved");
 
-    // Chain GROBID parse
+    // No GROBID: go straight to DNA (title/abstract until a text extractor is wired).
     let payload = serde_json::json!({
         "version_id": vid,
         "work_id": job.payload.get("work_id"),
     });
-    jobs::enqueue(&ctx.pool, job_kind::GROBID_PARSE, payload).await?;
-    let _ = Path::new(&rel);
+    jobs::enqueue(&ctx.pool, job_kind::EXTRACT_DNA, payload).await?;
     Ok(())
 }

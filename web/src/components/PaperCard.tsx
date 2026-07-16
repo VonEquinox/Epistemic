@@ -73,7 +73,7 @@ const JOB_STATUS_LABEL: Record<JobStatus, string> = {
 const JOB_KIND_LABEL: Record<string, string> = {
   resolve_metadata: '解析元数据',
   fetch_pdf: '拉取 PDF',
-  grobid_parse: 'GROBID 解析',
+  grobid_parse: '解析（已弃用→DNA）',
   extract_dna: 'DNA 抽取',
   fetch_references: '获取参考文献',
   update_neighbors_citation: '更新引用邻居',

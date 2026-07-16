@@ -19,16 +19,13 @@ async fn main() -> anyhow::Result<()> {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://epistemic:epistemic@localhost:5432/epistemic".into());
     let pdf_dir = PathBuf::from(std::env::var("PDF_DIR").unwrap_or_else(|_| "./data/pdfs".into()));
+    // Optional: only used to read pre-existing TEI from before GROBID removal.
     let tei_dir = PathBuf::from(std::env::var("TEI_DIR").unwrap_or_else(|_| "./data/tei".into()));
-    let grobid_url =
-        std::env::var("GROBID_URL").unwrap_or_else(|_| "http://localhost:8070".into());
-    let s2_api_key = std::env::var("S2_API_KEY").ok();
     tokio::fs::create_dir_all(&pdf_dir).await?;
-    tokio::fs::create_dir_all(&tei_dir).await?;
 
     let pool = epistemic_core::connect_no_migrate(&database_url).await?;
     let worker_id = format!("worker-{}", &Uuid::new_v4().to_string()[..8]);
-    tracing::info!(%worker_id, "epistemic-worker starting");
+    tracing::info!(%worker_id, "epistemic-worker starting (no GROBID)");
 
     let llm = epistemic_llm::LlmClient::from_env().ok();
     if llm.is_none() {
@@ -39,8 +36,6 @@ async fn main() -> anyhow::Result<()> {
         pool: pool.clone(),
         pdf_dir,
         tei_dir,
-        grobid_url,
-        s2_api_key,
         llm,
         http: reqwest::Client::builder()
             .timeout(Duration::from_secs(120))
@@ -84,13 +79,12 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-// re-export kind constants for match
 #[allow(dead_code)]
 fn _kinds() {
     let _ = [
         job_kind::RESOLVE_METADATA,
         job_kind::FETCH_PDF,
-        job_kind::GROBID_PARSE,
+        job_kind::GROBID_PARSE, // deprecated alias → extract_dna
         job_kind::EXTRACT_DNA,
         job_kind::FETCH_REFERENCES,
         job_kind::UPDATE_NEIGHBORS_CITATION,

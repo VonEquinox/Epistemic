@@ -15,13 +15,6 @@ services:
       timeout: 5s
       retries: 10
 
-  grobid:
-    image: lfoppiano/grobid:0.8.1
-    ports:
-      - "8070:8070"
-    environment:
-      JAVA_OPTS: "-Xmx2g"
-
   api:
     build:
       context: ../server
@@ -31,7 +24,6 @@ services:
     env_file: ../.env
     environment:
       DATABASE_URL: postgres://epistemic:epistemic@postgres:5432/epistemic
-      GROBID_URL: http://grobid:8070
       PDF_DIR: /data/pdfs
       TEI_DIR: /data/tei
       API_HOST: 0.0.0.0
@@ -54,7 +46,6 @@ services:
     env_file: ../.env
     environment:
       DATABASE_URL: postgres://epistemic:epistemic@postgres:5432/epistemic
-      GROBID_URL: http://grobid:8070
       PDF_DIR: /data/pdfs
       TEI_DIR: /data/tei
     volumes:
@@ -63,8 +54,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      grobid:
-        condition: service_started
 
   # SPA: build with `cd web && npm ci && npm run build` (outputs web/dist).
   # Caddyfile serves root * /srv with try_files SPA fallback.

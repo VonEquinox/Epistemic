@@ -2,7 +2,6 @@ mod batch_orch;
 mod classify_cite;
 mod extract;
 mod fetch_pdf;
-mod grobid;
 mod propose;
 mod references;
 mod resolve;
@@ -16,9 +15,8 @@ use crate::neighbors;
 pub struct JobContext {
     pub pool: PgPool,
     pub pdf_dir: PathBuf,
+    /// Legacy TEI directory (optional reads if old tei_path rows exist). No writer.
     pub tei_dir: PathBuf,
-    pub grobid_url: String,
-    pub s2_api_key: Option<String>,
     pub llm: Option<epistemic_llm::LlmClient>,
     pub http: reqwest::Client,
 }
@@ -27,7 +25,11 @@ pub async fn dispatch(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     match job.kind.as_str() {
         job_kind::RESOLVE_METADATA => resolve::run(ctx, job).await,
         job_kind::FETCH_PDF => fetch_pdf::run(ctx, job).await,
-        job_kind::GROBID_PARSE => grobid::run(ctx, job).await,
+        // GROBID removed: old queued jobs fall through to DNA on title/abstract.
+        job_kind::GROBID_PARSE => {
+            tracing::warn!(id = %job.id, "grobid_parse deprecated — running extract_dna instead");
+            extract::run(ctx, job).await
+        }
         job_kind::EXTRACT_DNA => extract::run(ctx, job).await,
         job_kind::FETCH_REFERENCES => references::run(ctx, job).await,
         job_kind::UPDATE_NEIGHBORS_CITATION => neighbors::update_citation(ctx, job).await,

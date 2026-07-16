@@ -23,6 +23,7 @@ pub struct Job {
 pub mod job_kind {
     pub const RESOLVE_METADATA: &str = "resolve_metadata";
     pub const FETCH_PDF: &str = "fetch_pdf";
+    /// Deprecated: GROBID removed. Worker maps this kind to `extract_dna`.
     pub const GROBID_PARSE: &str = "grobid_parse";
     pub const EXTRACT_DNA: &str = "extract_dna";
     pub const FETCH_REFERENCES: &str = "fetch_references";

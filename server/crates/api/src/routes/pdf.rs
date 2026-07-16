@@ -119,12 +119,12 @@ async fn upload_pdf(
 
     works::update_version_paths(&state.pool, id, Some(&rel), None).await?;
 
-    // Enqueue GROBID parse → DNA chain
+    // No GROBID: enqueue DNA extraction (title/abstract until PDF text extractor exists).
     let payload = serde_json::json!({
         "version_id": id,
         "work_id": version.work_id,
     });
-    let _ = jobs::enqueue(&state.pool, job_kind::GROBID_PARSE, payload).await;
+    let _ = jobs::enqueue(&state.pool, job_kind::EXTRACT_DNA, payload).await;
 
     tracing::info!(%id, path = %dest.display(), bytes = bytes.len(), "PDF uploaded");
 

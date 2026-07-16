@@ -26,7 +26,7 @@ export function parseBBox(raw: unknown): PdfBBox | null {
     ) {
       return { x: o.x, y: o.y, w: o.w, h: o.h };
     }
-    // GROBID sometimes uses x0,y0,x1,y1
+    // Some extractors use x0,y0,x1,y1
     if (
       typeof o.x0 === 'number' &&
       typeof o.y0 === 'number' &&
