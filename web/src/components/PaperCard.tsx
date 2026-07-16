@@ -23,6 +23,7 @@ import {
 } from '../api/hooks';
 import { RelationBadge } from './RelationBadge';
 import { StatusDot } from './StatusDot';
+import { aspectByKey } from '../graph/aspects';
 
 const levels: ReadingLevel[] = [
   'unread',
@@ -457,6 +458,46 @@ export function PaperCard({
         <section>
           <h2 className="font-medium text-ink-800 mb-1">摘要</h2>
           <p className="text-ink-700 leading-relaxed">{v.abstract_text}</p>
+        </section>
+      )}
+
+      {card.aspects && card.aspects.length > 0 && (
+        <section>
+          <h2 className="font-medium text-ink-800 mb-2">多层分析</h2>
+          <div className="space-y-3">
+            {card.aspects.map((a) => {
+              const bullets = Array.isArray(a.bullets)
+                ? (a.bullets as unknown[]).filter(
+                    (b): b is string => typeof b === 'string' && b.trim().length > 0,
+                  )
+                : [];
+              if (!a.summary?.trim() && bullets.length === 0) return null;
+              return (
+                <div key={a.aspect}>
+                  <h3 className="text-xs font-medium text-ink-500 mb-1">
+                    {aspectByKey(a.aspect)?.label ?? a.aspect}
+                  </h3>
+                  {a.summary?.trim() && (
+                    <p className="text-ink-700 leading-relaxed">{a.summary}</p>
+                  )}
+                  {bullets.length > 0 && (
+                    <ul className="mt-1 list-disc pl-4 text-ink-600 space-y-0.5">
+                      {bullets.map((b, i) => (
+                        <li key={i}>{b}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {a.source_text?.trim() && (
+                    <p className="mt-1 text-xs text-ink-400 italic">
+                      “{a.source_text.slice(0, 160)}
+                      {a.source_text.length > 160 ? '…' : ''}”
+                      {a.page > 0 ? ` · p.${a.page}` : ''}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </section>
       )}
 

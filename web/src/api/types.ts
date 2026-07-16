@@ -122,6 +122,19 @@ export interface Job {
   locked_at?: string | null;
 }
 
+export interface PaperAspect {
+  work_id: string;
+  aspect: string;
+  summary: string;
+  bullets: string[] | unknown;
+  source_text: string;
+  page: number;
+  model?: string | null;
+  prompt_version?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WorkCard {
   work: Work;
   primary_version?: Version | null;
@@ -130,6 +143,8 @@ export interface WorkCard {
   projects: { id: string; name: string; description: string }[];
   claims: Claim[];
   methods: Method[];
+  /** Fixed multi-aspect DNA layers. */
+  aspects?: PaperAspect[];
   reading: ReadingStatusRow[];
   annotations_count: number;
   evidence: EvidenceSpan[];

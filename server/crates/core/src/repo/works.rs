@@ -404,6 +404,9 @@ pub async fn get_work_card(pool: &PgPool, work_id: Uuid) -> AppResult<WorkCard> 
     let projs = projects::projects_for_work(pool, work_id).await?;
     let claims = list_claims(pool, work_id).await?;
     let methods = list_methods(pool, work_id).await?;
+    let aspects = crate::repo::aspects::list_for_work(pool, work_id)
+        .await
+        .unwrap_or_default();
     let reading_rows = reading::list_for_work(pool, work_id).await?;
     let annotations_count: i64 =
         sqlx::query_scalar(r#"SELECT COUNT(*) FROM annotations WHERE work_id = $1"#)
@@ -422,6 +425,7 @@ pub async fn get_work_card(pool: &PgPool, work_id: Uuid) -> AppResult<WorkCard> 
         projects: projs,
         claims,
         methods,
+        aspects,
         reading: reading_rows,
         annotations_count,
         evidence,

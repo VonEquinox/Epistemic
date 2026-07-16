@@ -1,0 +1,119 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "problem",
+    "contributions",
+    "methods",
+    "theory",
+    "datasets",
+    "findings",
+    "limitations",
+    "positioning",
+    "references"
+  ],
+  "properties": {
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "bullets", "source_text", "page"],
+      "properties": {
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "contributions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "bullets", "source_text", "page"],
+      "properties": {
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "methods": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "bullets", "source_text", "page"],
+      "properties": {
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "theory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "bullets", "source_text", "page"],
+      "properties": {
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "datasets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "bullets", "source_text", "page"],
+      "properties": {
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "findings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "bullets", "source_text", "page"],
+      "properties": {
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "limitations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "bullets", "source_text", "page"],
+      "properties": {
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "positioning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "bullets", "source_text", "page"],
+      "properties": {
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "source_text": { "type": "string" },
+        "page": { "type": "integer" }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "arxiv_id", "doi", "year"],
+        "properties": {
+          "title": { "type": "string" },
+          "arxiv_id": { "type": ["string", "null"] },
+          "doi": { "type": ["string", "null"] },
+          "year": { "type": ["integer", "null"] }
+        }
+      }
+    }
+  }
+}

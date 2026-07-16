@@ -47,8 +47,8 @@ pub async fn claim_next(pool: &PgPool, worker_id: &str) -> AppResult<Option<Job>
         ORDER BY
           CASE kind
             WHEN 'extract_dna' THEN 0
-            WHEN 'propose_pairs' THEN 1
-            WHEN 'embed' THEN 1
+            WHEN 'embed' THEN 0
+            WHEN 'propose_pairs' THEN 2
             WHEN 'update_neighbors_citation' THEN 2
             WHEN 'update_neighbors_lineage' THEN 2
             WHEN 'resolve_metadata' THEN 3

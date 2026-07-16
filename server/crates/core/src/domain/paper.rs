@@ -156,6 +156,9 @@ pub struct WorkCard {
     pub projects: Vec<Project>,
     pub claims: Vec<super::Claim>,
     pub methods: Vec<super::Method>,
+    /// Fixed multi-aspect DNA layers (problem / methods / findings / …).
+    #[serde(default)]
+    pub aspects: Vec<super::PaperAspect>,
     pub reading: Vec<super::ReadingStatusRow>,
     pub annotations_count: i64,
     pub evidence: Vec<super::EvidenceSpan>,

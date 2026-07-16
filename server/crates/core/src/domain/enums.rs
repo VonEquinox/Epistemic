@@ -201,6 +201,75 @@ pub enum NeighborDimension {
     CitationCoupling,
     MethodLineage,
     Topic,
+    AspectProblem,
+    AspectContributions,
+    AspectMethods,
+    AspectTheory,
+    AspectDatasets,
+    AspectFindings,
+    AspectLimitations,
+    AspectPositioning,
+}
+
+/// Fixed analysis layers: DNA key → neighbor dimension → embedding field suffix.
+#[derive(Debug, Clone, Copy)]
+pub struct AspectDef {
+    pub key: &'static str,
+    pub label_zh: &'static str,
+    pub dimension: NeighborDimension,
+}
+
+pub const ASPECTS: &[AspectDef] = &[
+    AspectDef {
+        key: "problem",
+        label_zh: "问题设定",
+        dimension: NeighborDimension::AspectProblem,
+    },
+    AspectDef {
+        key: "contributions",
+        label_zh: "贡献",
+        dimension: NeighborDimension::AspectContributions,
+    },
+    AspectDef {
+        key: "methods",
+        label_zh: "方法",
+        dimension: NeighborDimension::AspectMethods,
+    },
+    AspectDef {
+        key: "theory",
+        label_zh: "理论/形式化",
+        dimension: NeighborDimension::AspectTheory,
+    },
+    AspectDef {
+        key: "datasets",
+        label_zh: "数据与基准",
+        dimension: NeighborDimension::AspectDatasets,
+    },
+    AspectDef {
+        key: "findings",
+        label_zh: "主张与结果",
+        dimension: NeighborDimension::AspectFindings,
+    },
+    AspectDef {
+        key: "limitations",
+        label_zh: "局限",
+        dimension: NeighborDimension::AspectLimitations,
+    },
+    AspectDef {
+        key: "positioning",
+        label_zh: "相关工作定位",
+        dimension: NeighborDimension::AspectPositioning,
+    },
+];
+
+impl AspectDef {
+    pub fn embedding_field(&self) -> String {
+        format!("aspect:{}", self.key)
+    }
+
+    pub fn by_key(key: &str) -> Option<&'static AspectDef> {
+        ASPECTS.iter().find(|a| a.key == key)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, ToSchema)]

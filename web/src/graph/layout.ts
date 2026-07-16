@@ -36,6 +36,33 @@ export function combineNeighbors(
   return out;
 }
 
+/**
+ * Single aspect dimension → score map (for layout springs + visible sim edges).
+ * Optionally caps each work's outgoing list to topK and drops scores below minScore.
+ */
+export function aspectNeighborMap(
+  neighbors: Record<string, Record<string, NeighborEntry[]>>,
+  dimension: string,
+  topK = 8,
+  minScore = 0,
+): Map<string, Map<string, number>> {
+  const out = new Map<string, Map<string, number>>();
+  const table = neighbors[dimension] ?? {};
+  for (const [workId, list] of Object.entries(table)) {
+    const sorted = [...list]
+      .filter((n) => n.score >= minScore)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+    if (sorted.length === 0) continue;
+    const m = new Map<string, number>();
+    for (const n of sorted) {
+      m.set(n.neighbor_work_id, n.score);
+    }
+    out.set(workId, m);
+  }
+  return out;
+}
+
 /** Spring length from combined score. Lmin=80, Lmax=420 */
 export function springLength(score: number, lmin = 80, lmax = 420): number {
   const s = Math.max(0, Math.min(1, score));
@@ -175,6 +202,7 @@ export const __test = {
   seedPosition,
   lodFromZoom,
   combineNeighbors,
+  aspectNeighborMap,
   bundleEdges,
   semanticGroupOf,
   readerBorderWidth,

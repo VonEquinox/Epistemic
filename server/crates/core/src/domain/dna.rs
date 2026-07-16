@@ -51,3 +51,18 @@ pub struct Extraction {
     pub cost_usd: Option<f64>,
     pub created_at: DateTime<Utc>,
 }
+
+/// One fixed analysis layer for a work (multi-aspect DNA).
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct PaperAspect {
+    pub work_id: Uuid,
+    pub aspect: String,
+    pub summary: String,
+    pub bullets: serde_json::Value,
+    pub source_text: String,
+    pub page: i32,
+    pub model: Option<String>,
+    pub prompt_version: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
