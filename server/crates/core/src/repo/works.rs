@@ -1,11 +1,12 @@
 use sqlx::PgPool;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{
-    Author, Claim, Method, ReadingStatusRow, Version, VersionAuthor, VersionKind, VersionRow, Work,
-    WorkCard,
+    Author, Claim, Method, PaperAspect, ReadingStatusRow, Version, VersionAuthor, VersionKind,
+    VersionRow, Work, WorkCard,
 };
 use crate::error::{AppError, AppResult};
 use crate::repo::{jobs, projects, reading, relations};
@@ -126,10 +127,11 @@ async fn upsert_author_tx(
     if let Some(id) = existing {
         return Ok(id);
     }
-    let id: Uuid = sqlx::query_scalar(r#"INSERT INTO authors (full_name) VALUES ($1) RETURNING id"#)
-        .bind(full_name)
-        .fetch_one(&mut **tx)
-        .await?;
+    let id: Uuid =
+        sqlx::query_scalar(r#"INSERT INTO authors (full_name) VALUES ($1) RETURNING id"#)
+            .bind(full_name)
+            .fetch_one(&mut **tx)
+            .await?;
     Ok(id)
 }
 
@@ -300,7 +302,8 @@ pub async fn list_works(pool: &PgPool, q: WorkListQuery) -> AppResult<Vec<WorkLi
     let offset = q.offset.max(0);
 
     let sql = match (&q.project_id, &q.query) {
-        (Some(_), Some(_)) => r#"
+        (Some(_), Some(_)) => {
+            r#"
             SELECT w.id, w.title_norm, w.primary_version_id, w.created_by, w.created_at,
                    v.title as v_title, v.year as v_year, v.arxiv_id as v_arxiv, v.venue_name as v_venue
             FROM works w
@@ -308,30 +311,37 @@ pub async fn list_works(pool: &PgPool, q: WorkListQuery) -> AppResult<Vec<WorkLi
             LEFT JOIN versions v ON v.id = w.primary_version_id
             WHERE w.title_norm ILIKE $2 OR v.title ILIKE $2 OR v.arxiv_id ILIKE $2
             ORDER BY w.created_at DESC LIMIT $3 OFFSET $4
-        "#,
-        (Some(_), None) => r#"
+        "#
+        }
+        (Some(_), None) => {
+            r#"
             SELECT w.id, w.title_norm, w.primary_version_id, w.created_by, w.created_at,
                    v.title as v_title, v.year as v_year, v.arxiv_id as v_arxiv, v.venue_name as v_venue
             FROM works w
             JOIN work_projects wp ON wp.work_id = w.id AND wp.project_id = $1
             LEFT JOIN versions v ON v.id = w.primary_version_id
             ORDER BY w.created_at DESC LIMIT $2 OFFSET $3
-        "#,
-        (None, Some(_)) => r#"
+        "#
+        }
+        (None, Some(_)) => {
+            r#"
             SELECT w.id, w.title_norm, w.primary_version_id, w.created_by, w.created_at,
                    v.title as v_title, v.year as v_year, v.arxiv_id as v_arxiv, v.venue_name as v_venue
             FROM works w
             LEFT JOIN versions v ON v.id = w.primary_version_id
             WHERE w.title_norm ILIKE $1 OR v.title ILIKE $1 OR v.arxiv_id ILIKE $1
             ORDER BY w.created_at DESC LIMIT $2 OFFSET $3
-        "#,
-        (None, None) => r#"
+        "#
+        }
+        (None, None) => {
+            r#"
             SELECT w.id, w.title_norm, w.primary_version_id, w.created_by, w.created_at,
                    v.title as v_title, v.year as v_year, v.arxiv_id as v_arxiv, v.venue_name as v_venue
             FROM works w
             LEFT JOIN versions v ON v.id = w.primary_version_id
             ORDER BY w.created_at DESC LIMIT $1 OFFSET $2
-        "#,
+        "#
+        }
     };
 
     let mut query = sqlx::query_as::<_, WorkListRow>(sql);
@@ -347,10 +357,7 @@ pub async fn list_works(pool: &PgPool, q: WorkListQuery) -> AppResult<Vec<WorkLi
             query = query.bind(*pid).bind(limit).bind(offset);
         }
         (None, Some(text)) => {
-            query = query
-                .bind(format!("%{text}%"))
-                .bind(limit)
-                .bind(offset);
+            query = query.bind(format!("%{text}%")).bind(limit).bind(offset);
         }
         (None, None) => {
             query = query.bind(limit).bind(offset);
@@ -543,6 +550,16 @@ struct MergeSnapshot {
     versions: Vec<Version>,
     project_ids: Vec<Uuid>,
     reading_status: Vec<ReadingStatusRow>,
+    #[serde(default)]
+    kept_reading_status_before: Option<Vec<ReadingStatusRow>>,
+    #[serde(default)]
+    graph_memberships: Vec<MergeGraphMembership>,
+    #[serde(default)]
+    copied_graph_ids: Vec<Uuid>,
+    #[serde(default)]
+    paper_aspects: Vec<PaperAspect>,
+    #[serde(default)]
+    copied_aspect_keys: Vec<String>,
     claim_ids: Vec<Uuid>,
     method_ids: Vec<Uuid>,
     annotation_ids: Vec<Uuid>,
@@ -550,7 +567,16 @@ struct MergeSnapshot {
     citation_ids_cited: Vec<Uuid>,
     /// Pre-merge relation_members rows that referenced the merged work as entity or anchor.
     relation_members: Vec<MergeRelationMember>,
+    #[serde(default)]
+    relation_member_conflicts: Vec<MergeRelationMember>,
     neighbors: Vec<MergeNeighbor>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+struct MergeGraphMembership {
+    graph_id: Uuid,
+    added_by: Option<Uuid>,
+    added_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -591,41 +617,155 @@ pub async fn merge_works(
     if kept_work_id == merged_work_id {
         return Err(AppError::BadRequest("cannot merge work with itself".into()));
     }
-    let kept = get_work(pool, kept_work_id).await?;
-    let merged = get_work(pool, merged_work_id).await?;
 
-    let versions = list_versions_for_work(pool, merged_work_id).await?;
-    let project_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT project_id FROM work_projects WHERE work_id = $1"#,
+    let mut tx = pool.begin().await?;
+    let locked = sqlx::query_as::<_, Work>(
+        r#"
+        SELECT id, title_norm, primary_version_id, created_by, created_at
+        FROM works
+        WHERE id = ANY($1)
+        ORDER BY id
+        FOR UPDATE
+        "#,
+    )
+    .bind(&[kept_work_id, merged_work_id])
+    .fetch_all(&mut *tx)
+    .await?;
+    let kept = locked
+        .iter()
+        .find(|work| work.id == kept_work_id)
+        .cloned()
+        .ok_or_else(|| AppError::NotFound(format!("work {kept_work_id}")))?;
+    let merged = locked
+        .iter()
+        .find(|work| work.id == merged_work_id)
+        .cloned()
+        .ok_or_else(|| AppError::NotFound(format!("work {merged_work_id}")))?;
+
+    let directly_linked: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM relation_members a
+            JOIN relation_members b ON b.relation_id = a.relation_id
+            WHERE a.entity_kind = 'work' AND a.entity_id = $1
+              AND b.entity_kind = 'work' AND b.entity_id = $2
+        ) OR EXISTS (
+            SELECT 1 FROM citations
+            WHERE (citing_work_id = $1 AND cited_work_id = $2)
+               OR (citing_work_id = $2 AND cited_work_id = $1)
+        )
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(merged_work_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if directly_linked {
+        return Err(AppError::Conflict(
+            "cannot merge works that are directly related or cite each other; resolve that edge first"
+                .into(),
+        ));
+    }
+
+    let versions: Vec<Version> = sqlx::query_as::<_, VersionRow>(
+        r#"
+        SELECT id, work_id, kind, arxiv_id, doi, url, title, abstract, year,
+               venue_name, pdf_path, tei_path, metadata_source, created_at
+        FROM versions WHERE work_id = $1 ORDER BY created_at
+        "#,
     )
     .bind(merged_work_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .map(Into::into)
+    .collect();
+    let project_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT project_id FROM work_projects WHERE work_id = $1")
+            .bind(merged_work_id)
+            .fetch_all(&mut *tx)
+            .await?;
+    let reading_status = sqlx::query_as::<_, ReadingStatusRow>(
+        r#"
+        SELECT user_id, work_id, status, starred, updated_at
+        FROM reading_status WHERE work_id = $1
+        "#,
+    )
+    .bind(merged_work_id)
+    .fetch_all(&mut *tx)
     .await?;
-    let reading_status = reading::list_for_work(pool, merged_work_id).await?;
-    let claim_ids: Vec<Uuid> =
-        sqlx::query_scalar(r#"SELECT id FROM claims WHERE work_id = $1"#)
-            .bind(merged_work_id)
-            .fetch_all(pool)
-            .await?;
-    let method_ids: Vec<Uuid> =
-        sqlx::query_scalar(r#"SELECT id FROM methods WHERE work_id = $1"#)
-            .bind(merged_work_id)
-            .fetch_all(pool)
-            .await?;
+    let kept_reading_status_before = sqlx::query_as::<_, ReadingStatusRow>(
+        r#"
+        SELECT user_id, work_id, status, starred, updated_at
+        FROM reading_status WHERE work_id = $1
+        "#,
+    )
+    .bind(kept_work_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let graph_memberships = sqlx::query_as::<_, MergeGraphMembership>(
+        "SELECT graph_id, added_by, added_at FROM graph_works WHERE work_id = $1",
+    )
+    .bind(merged_work_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let kept_graph_ids: HashSet<Uuid> =
+        sqlx::query_scalar("SELECT graph_id FROM graph_works WHERE work_id = $1")
+            .bind(kept_work_id)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
+    let copied_graph_ids = graph_memberships
+        .iter()
+        .filter(|membership| !kept_graph_ids.contains(&membership.graph_id))
+        .map(|membership| membership.graph_id)
+        .collect();
+    let paper_aspects = sqlx::query_as::<_, PaperAspect>(
+        r#"
+        SELECT work_id, aspect, summary, bullets, source_text, page,
+               model, prompt_version, created_at, updated_at
+        FROM paper_aspects WHERE work_id = $1
+        "#,
+    )
+    .bind(merged_work_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let kept_aspect_keys: HashSet<String> =
+        sqlx::query_scalar("SELECT aspect FROM paper_aspects WHERE work_id = $1")
+            .bind(kept_work_id)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
+    let copied_aspect_keys = paper_aspects
+        .iter()
+        .filter(|aspect| !kept_aspect_keys.contains(&aspect.aspect))
+        .map(|aspect| aspect.aspect.clone())
+        .collect();
+    let claim_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM claims WHERE work_id = $1")
+        .bind(merged_work_id)
+        .fetch_all(&mut *tx)
+        .await?;
+    let method_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM methods WHERE work_id = $1")
+        .bind(merged_work_id)
+        .fetch_all(&mut *tx)
+        .await?;
     let annotation_ids: Vec<Uuid> =
-        sqlx::query_scalar(r#"SELECT id FROM annotations WHERE work_id = $1"#)
+        sqlx::query_scalar("SELECT id FROM annotations WHERE work_id = $1")
             .bind(merged_work_id)
-            .fetch_all(pool)
+            .fetch_all(&mut *tx)
             .await?;
     let citation_ids_citing: Vec<Uuid> =
-        sqlx::query_scalar(r#"SELECT id FROM citations WHERE citing_work_id = $1"#)
+        sqlx::query_scalar("SELECT id FROM citations WHERE citing_work_id = $1")
             .bind(merged_work_id)
-            .fetch_all(pool)
+            .fetch_all(&mut *tx)
             .await?;
     let citation_ids_cited: Vec<Uuid> =
-        sqlx::query_scalar(r#"SELECT id FROM citations WHERE cited_work_id = $1"#)
+        sqlx::query_scalar("SELECT id FROM citations WHERE cited_work_id = $1")
             .bind(merged_work_id)
-            .fetch_all(pool)
+            .fetch_all(&mut *tx)
             .await?;
     let relation_members = sqlx::query_as::<_, MergeRelationMember>(
         r#"
@@ -637,7 +777,26 @@ pub async fn merge_works(
         "#,
     )
     .bind(merged_work_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
+    .await?;
+    let relation_member_conflicts = sqlx::query_as::<_, MergeRelationMember>(
+        r#"
+        SELECT rm.relation_id, rm.entity_kind::text AS entity_kind, rm.entity_id,
+               rm.role::text AS role, rm.anchor_work_id, rm.position
+        FROM relation_members rm
+        WHERE rm.entity_kind = 'work' AND rm.entity_id = $2
+          AND EXISTS (
+            SELECT 1 FROM relation_members kept
+            WHERE kept.relation_id = rm.relation_id
+              AND kept.entity_kind = 'work'
+              AND kept.entity_id = $1
+              AND kept.role = rm.role
+          )
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(merged_work_id)
+    .fetch_all(&mut *tx)
     .await?;
     let neighbors = sqlx::query_as::<_, MergeNeighbor>(
         r#"
@@ -647,7 +806,7 @@ pub async fn merge_works(
         "#,
     )
     .bind(merged_work_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
     .await?;
 
     let snapshot = MergeSnapshot {
@@ -655,18 +814,23 @@ pub async fn merge_works(
         versions,
         project_ids,
         reading_status,
+        kept_reading_status_before: Some(kept_reading_status_before),
+        graph_memberships,
+        copied_graph_ids,
+        paper_aspects,
+        copied_aspect_keys,
         claim_ids,
         method_ids,
         annotation_ids,
         citation_ids_citing,
         citation_ids_cited,
         relation_members,
+        relation_member_conflicts,
         neighbors,
     };
     let snapshot_json = serde_json::to_value(&snapshot)
         .map_err(|e| AppError::Other(anyhow::anyhow!("serialize merge snapshot: {e}")))?;
 
-    let mut tx = pool.begin().await?;
     for (sql, a, b) in [
         (
             "UPDATE versions SET work_id = $1 WHERE work_id = $2",
@@ -704,11 +868,7 @@ pub async fn merge_works(
             merged_work_id,
         ),
     ] {
-        sqlx::query(sql)
-            .bind(a)
-            .bind(b)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(sql).bind(a).bind(b).execute(&mut *tx).await?;
     }
 
     sqlx::query(
@@ -722,12 +882,71 @@ pub async fn merge_works(
     .bind(merged_work_id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query(r#"DELETE FROM work_projects WHERE work_id = $1"#)
+    sqlx::query("DELETE FROM work_projects WHERE work_id = $1")
         .bind(merged_work_id)
         .execute(&mut *tx)
         .await?;
 
-    // Work-entity relation members: rewrite entity_id; drop if PK already occupied by kept.
+    sqlx::query(
+        r#"
+        INSERT INTO graph_works (graph_id, work_id, added_by, added_at)
+        SELECT graph_id, $1, added_by, added_at FROM graph_works WHERE work_id = $2
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(merged_work_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM graph_works WHERE work_id = $1")
+        .bind(merged_work_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO paper_aspects (
+            work_id, aspect, summary, bullets, source_text, page,
+            model, prompt_version, created_at, updated_at
+        )
+        SELECT $1, aspect, summary, bullets, source_text, page,
+               model, prompt_version, created_at, updated_at
+        FROM paper_aspects WHERE work_id = $2
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(merged_work_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM paper_aspects WHERE work_id = $1")
+        .bind(merged_work_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO reading_status (user_id, work_id, status, starred, updated_at)
+        SELECT user_id, $1, status, starred, updated_at
+        FROM reading_status WHERE work_id = $2
+        ON CONFLICT (user_id, work_id) DO UPDATE SET
+            status = CASE
+                WHEN EXCLUDED.updated_at > reading_status.updated_at THEN EXCLUDED.status
+                ELSE reading_status.status
+            END,
+            starred = reading_status.starred OR EXCLUDED.starred,
+            updated_at = GREATEST(reading_status.updated_at, EXCLUDED.updated_at)
+        "#,
+    )
+    .bind(kept_work_id)
+    .bind(merged_work_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM reading_status WHERE work_id = $1")
+        .bind(merged_work_id)
+        .execute(&mut *tx)
+        .await?;
+
     sqlx::query(
         r#"
         DELETE FROM relation_members rm
@@ -746,17 +965,13 @@ pub async fn merge_works(
     .execute(&mut *tx)
     .await?;
     sqlx::query(
-        r#"
-        UPDATE relation_members SET entity_id = $1
-        WHERE entity_kind = 'work' AND entity_id = $2
-        "#,
+        "UPDATE relation_members SET entity_id = $1 WHERE entity_kind = 'work' AND entity_id = $2",
     )
     .bind(kept_work_id)
     .bind(merged_work_id)
     .execute(&mut *tx)
     .await?;
 
-    // Fold neighbors onto kept (avoid self-loops / PK conflicts), then drop remainder.
     sqlx::query(
         r#"
         INSERT INTO neighbors (dimension, work_id, neighbor_work_id, score)
@@ -783,7 +998,7 @@ pub async fn merge_works(
     .bind(merged_work_id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query(r#"DELETE FROM neighbors WHERE work_id = $1 OR neighbor_work_id = $1"#)
+    sqlx::query("DELETE FROM neighbors WHERE work_id = $1 OR neighbor_work_id = $1")
         .bind(merged_work_id)
         .execute(&mut *tx)
         .await?;
@@ -800,12 +1015,7 @@ pub async fn merge_works(
     .bind(merged_by)
     .execute(&mut *tx)
     .await?;
-
-    sqlx::query(r#"DELETE FROM reading_status WHERE work_id = $1"#)
-        .bind(merged_work_id)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query(r#"DELETE FROM works WHERE id = $1"#)
+    sqlx::query("DELETE FROM works WHERE id = $1")
         .bind(merged_work_id)
         .execute(&mut *tx)
         .await?;
@@ -956,14 +1166,12 @@ pub async fn split_work(
             .await?;
     }
     if !snap.annotation_ids.is_empty() {
-        sqlx::query(
-            r#"UPDATE annotations SET work_id = $1 WHERE id = ANY($2) AND work_id = $3"#,
-        )
-        .bind(restored_id)
-        .bind(&snap.annotation_ids)
-        .bind(kept_work_id)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query(r#"UPDATE annotations SET work_id = $1 WHERE id = ANY($2) AND work_id = $3"#)
+            .bind(restored_id)
+            .bind(&snap.annotation_ids)
+            .bind(kept_work_id)
+            .execute(&mut *tx)
+            .await?;
     }
     if !snap.citation_ids_citing.is_empty() {
         sqlx::query(
@@ -995,41 +1203,44 @@ pub async fn split_work(
     // Reverse relation_member rewrites using snapshotted pre-merge keys.
     for m in &snap.relation_members {
         if m.entity_kind == "work" && m.entity_id == restored_id {
-            // After merge entity_id became kept; try to move it back.
-            let updated = sqlx::query(
-                r#"
-                UPDATE relation_members
-                SET entity_id = $1
-                WHERE relation_id = $2
-                  AND entity_kind = 'work'
-                  AND entity_id = $3
-                  AND role = $4::member_role
-                  AND NOT EXISTS (
-                    SELECT 1 FROM relation_members x
-                    WHERE x.relation_id = $2
-                      AND x.entity_kind = 'work'
-                      AND x.entity_id = $1
-                      AND x.role = $4::member_role
-                  )
-                "#,
-            )
-            .bind(restored_id)
-            .bind(m.relation_id)
-            .bind(kept_work_id)
-            .bind(&m.role)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
-            if updated == 0 {
-                // Member may have been deleted at merge due to PK conflict; re-insert.
-                let anchor = m.anchor_work_id.map(|a| {
-                    if a == restored_id {
-                        restored_id
-                    } else {
-                        a
-                    }
-                });
-                let _ = sqlx::query(
+            let was_conflict = snap.relation_member_conflicts.iter().any(|conflict| {
+                conflict.relation_id == m.relation_id
+                    && conflict.role == m.role
+                    && conflict.entity_kind == m.entity_kind
+                    && conflict.entity_id == m.entity_id
+            });
+            let mut updated = 0;
+            if !was_conflict {
+                updated = sqlx::query(
+                    r#"
+                    UPDATE relation_members
+                    SET entity_id = $1
+                    WHERE relation_id = $2
+                      AND entity_kind = 'work'
+                      AND entity_id = $3
+                      AND role = $4::member_role
+                      AND NOT EXISTS (
+                        SELECT 1 FROM relation_members x
+                        WHERE x.relation_id = $2
+                          AND x.entity_kind = 'work'
+                          AND x.entity_id = $1
+                          AND x.role = $4::member_role
+                      )
+                    "#,
+                )
+                .bind(restored_id)
+                .bind(m.relation_id)
+                .bind(kept_work_id)
+                .bind(&m.role)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+            }
+            if was_conflict || updated == 0 {
+                let anchor = m
+                    .anchor_work_id
+                    .map(|a| if a == restored_id { restored_id } else { a });
+                sqlx::query(
                     r#"
                     INSERT INTO relation_members
                         (relation_id, entity_kind, entity_id, role, anchor_work_id, position)
@@ -1043,7 +1254,7 @@ pub async fn split_work(
                 .bind(anchor)
                 .bind(m.position)
                 .execute(&mut *tx)
-                .await;
+                .await?;
             }
         }
         if m.anchor_work_id == Some(restored_id) {
@@ -1109,19 +1320,79 @@ pub async fn split_work(
         .await?;
     }
 
-    for rs in &snap.reading_status {
+    // Keep any membership copied onto the kept work. Removing it here could
+    // delete a post-merge re-add or edit; the restored work gets its own membership below.
+    for membership in &snap.graph_memberships {
+        sqlx::query(
+            r#"
+            INSERT INTO graph_works (graph_id, work_id, added_by, added_at)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (graph_id, work_id) DO UPDATE SET
+                added_by = EXCLUDED.added_by,
+                added_at = EXCLUDED.added_at
+            "#,
+        )
+        .bind(membership.graph_id)
+        .bind(restored_id)
+        .bind(membership.added_by)
+        .bind(membership.added_at)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Keep copied/current aspects on the kept work. The restored work receives
+    // the snapshotted aspects below without clobbering newer kept-work extraction data.
+    for aspect in &snap.paper_aspects {
+        sqlx::query(
+            r#"
+            INSERT INTO paper_aspects (
+                work_id, aspect, summary, bullets, source_text, page,
+                model, prompt_version, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (work_id, aspect) DO UPDATE SET
+                summary = EXCLUDED.summary,
+                bullets = EXCLUDED.bullets,
+                source_text = EXCLUDED.source_text,
+                page = EXCLUDED.page,
+                model = EXCLUDED.model,
+                prompt_version = EXCLUDED.prompt_version,
+                created_at = EXCLUDED.created_at,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(restored_id)
+        .bind(&aspect.aspect)
+        .bind(&aspect.summary)
+        .bind(&aspect.bullets)
+        .bind(&aspect.source_text)
+        .bind(aspect.page)
+        .bind(&aspect.model)
+        .bind(&aspect.prompt_version)
+        .bind(aspect.created_at)
+        .bind(aspect.updated_at)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Do not roll back kept-work reading state: it may have been changed after
+    // the merge. Restore only the merged work's own rows below.
+    for row in &snap.reading_status {
         sqlx::query(
             r#"
             INSERT INTO reading_status (user_id, work_id, status, starred, updated_at)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (user_id, work_id) DO NOTHING
+            ON CONFLICT (user_id, work_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                starred = EXCLUDED.starred,
+                updated_at = EXCLUDED.updated_at
             "#,
         )
-        .bind(rs.user_id)
+        .bind(row.user_id)
         .bind(restored_id)
-        .bind(rs.status)
-        .bind(rs.starred)
-        .bind(rs.updated_at)
+        .bind(row.status)
+        .bind(row.starred)
+        .bind(row.updated_at)
         .execute(&mut *tx)
         .await?;
     }
@@ -1200,9 +1471,5 @@ async fn load_merge_history(
     .bind(mid)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| {
-        AppError::NotFound(format!(
-            "unreverted merge of {mid} into {kept_work_id}"
-        ))
-    })
+    .ok_or_else(|| AppError::NotFound(format!("unreverted merge of {mid} into {kept_work_id}")))
 }

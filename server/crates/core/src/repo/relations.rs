@@ -40,8 +40,164 @@ pub struct NewRelation {
     pub evidence: Vec<NewEvidence>,
 }
 
+fn validate_relation_shape(nr: &NewRelation) -> AppResult<()> {
+    let sources = nr
+        .members
+        .iter()
+        .filter(|member| member.role == MemberRole::Source)
+        .count();
+    let targets = nr
+        .members
+        .iter()
+        .filter(|member| member.role == MemberRole::Target)
+        .count();
+    if sources != 1 || targets != 1 {
+        return Err(AppError::Validation(
+            "relation requires exactly one source and one target".into(),
+        ));
+    }
+    let source = nr
+        .members
+        .iter()
+        .find(|member| member.role == MemberRole::Source)
+        .expect("source count checked");
+    let target = nr
+        .members
+        .iter()
+        .find(|member| member.role == MemberRole::Target)
+        .expect("target count checked");
+    if source.entity_kind == target.entity_kind && source.entity_id == target.entity_id {
+        return Err(AppError::Validation(
+            "relation source and target must be different".into(),
+        ));
+    }
+    if let Some(confidence) = nr.confidence {
+        if !(0.0..=1.0).contains(&confidence) || !confidence.is_finite() {
+            return Err(AppError::Validation(
+                "relation confidence must be between 0 and 1".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_member_entity(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    member: &NewRelationMember,
+) -> AppResult<()> {
+    let owner_work_id: Option<Uuid> = match member.entity_kind {
+        EntityKind::Work => {
+            sqlx::query_scalar("SELECT id FROM works WHERE id = $1 FOR KEY SHARE")
+                .bind(member.entity_id)
+                .fetch_optional(&mut **tx)
+                .await?
+        }
+        EntityKind::Claim => {
+            sqlx::query_scalar("SELECT work_id FROM claims WHERE id = $1 FOR KEY SHARE")
+                .bind(member.entity_id)
+                .fetch_optional(&mut **tx)
+                .await?
+        }
+        EntityKind::Method => {
+            sqlx::query_scalar("SELECT work_id FROM methods WHERE id = $1 FOR KEY SHARE")
+                .bind(member.entity_id)
+                .fetch_optional(&mut **tx)
+                .await?
+                .flatten()
+        }
+        EntityKind::Version => {
+            sqlx::query_scalar("SELECT work_id FROM versions WHERE id = $1 FOR KEY SHARE")
+                .bind(member.entity_id)
+                .fetch_optional(&mut **tx)
+                .await?
+        }
+        EntityKind::Dataset => {
+            let exists = sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM datasets WHERE id = $1 FOR KEY SHARE",
+            )
+            .bind(member.entity_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .is_some();
+            if !exists {
+                return Err(AppError::NotFound(format!("dataset {}", member.entity_id)));
+            }
+            None
+        }
+        EntityKind::Person => {
+            let exists =
+                sqlx::query_scalar::<_, Uuid>("SELECT id FROM authors WHERE id = $1 FOR KEY SHARE")
+                    .bind(member.entity_id)
+                    .fetch_optional(&mut **tx)
+                    .await?
+                    .is_some();
+            if !exists {
+                return Err(AppError::NotFound(format!("person {}", member.entity_id)));
+            }
+            None
+        }
+    };
+
+    if matches!(
+        member.entity_kind,
+        EntityKind::Work | EntityKind::Claim | EntityKind::Method | EntityKind::Version
+    ) && owner_work_id.is_none()
+    {
+        return Err(AppError::NotFound(format!(
+            "{:?} {}",
+            member.entity_kind, member.entity_id
+        )));
+    }
+
+    if let Some(anchor) = member.anchor_work_id {
+        let exists =
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM works WHERE id = $1 FOR KEY SHARE")
+                .bind(anchor)
+                .fetch_optional(&mut **tx)
+                .await?
+                .is_some();
+        if !exists {
+            return Err(AppError::NotFound(format!("anchor work {anchor}")));
+        }
+        if let Some(owner) = owner_work_id {
+            if anchor != owner {
+                return Err(AppError::Validation(format!(
+                    "anchor work {anchor} does not own entity {}",
+                    member.entity_id
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn create_relation(pool: &PgPool, nr: NewRelation) -> AppResult<RelationDetail> {
+    validate_relation_shape(&nr)?;
     let mut tx = pool.begin().await?;
+
+    for member in &nr.members {
+        validate_member_entity(&mut tx, member).await?;
+    }
+    for evidence in &nr.evidence {
+        if evidence.page < 1 {
+            return Err(AppError::Validation("evidence page must be >= 1".into()));
+        }
+        if evidence.text.trim().is_empty() {
+            return Err(AppError::Validation("evidence text is required".into()));
+        }
+        let exists =
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM versions WHERE id = $1 FOR KEY SHARE")
+                .bind(evidence.version_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .is_some();
+        if !exists {
+            return Err(AppError::NotFound(format!(
+                "version {}",
+                evidence.version_id
+            )));
+        }
+    }
 
     let rel = sqlx::query_as::<_, Relation>(
         r#"
@@ -530,3 +686,56 @@ pub async fn list_for_work(pool: &PgPool, work_id: Uuid) -> AppResult<Vec<Relati
     Ok(out)
 }
 
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    fn member(role: MemberRole, id: Uuid) -> NewRelationMember {
+        NewRelationMember {
+            entity_kind: EntityKind::Work,
+            entity_id: id,
+            role,
+            anchor_work_id: Some(id),
+            position: 0,
+        }
+    }
+
+    fn relation(members: Vec<NewRelationMember>) -> NewRelation {
+        NewRelation {
+            relation_type: RelationType::ImprovesOn,
+            aspect: None,
+            scope: None,
+            explanation: String::new(),
+            confidence: Some(0.5),
+            source: SourceLayer::TeamRecord,
+            review_status: ReviewStatus::Unreviewed,
+            created_by_user: None,
+            model_version: None,
+            members,
+            evidence: vec![],
+        }
+    }
+
+    #[test]
+    fn rejects_missing_or_duplicate_endpoints() {
+        assert!(validate_relation_shape(&relation(vec![])).is_err());
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let c = Uuid::new_v4();
+        assert!(validate_relation_shape(&relation(vec![
+            member(MemberRole::Source, a),
+            member(MemberRole::Source, b),
+            member(MemberRole::Target, c),
+        ]))
+        .is_err());
+    }
+
+    #[test]
+    fn accepts_one_source_and_target() {
+        let nr = relation(vec![
+            member(MemberRole::Source, Uuid::new_v4()),
+            member(MemberRole::Target, Uuid::new_v4()),
+        ]);
+        assert!(validate_relation_shape(&nr).is_ok());
+    }
+}

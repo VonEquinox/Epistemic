@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use epistemic_core::domain::{VersionKind, Work, WorkCard, job_kind};
+use epistemic_core::domain::{job_kind, VersionKind, Work, WorkCard};
 use epistemic_core::repo::{jobs, works};
 use epistemic_core::util::{parse_arxiv_id, parse_doi};
 use epistemic_core::AppError;
@@ -79,10 +79,7 @@ async fn quick_add(
     let doi = parse_doi(input);
 
     if arxiv_id.is_none() && doi.is_none() {
-        return Err(AppError::BadRequest(
-            "provide an arXiv id/URL or DOI".into(),
-        )
-        .into());
+        return Err(AppError::BadRequest("provide an arXiv id/URL or DOI".into()).into());
     }
 
     let title = arxiv_id
@@ -115,18 +112,35 @@ async fn quick_add(
     )
     .await?;
 
-    if created {
-        // Enqueue pipeline
-        let payload = serde_json::json!({
-            "version_id": version.id,
-            "work_id": work.id,
-        });
-        jobs::enqueue(&state.pool, job_kind::RESOLVE_METADATA, payload.clone()).await?;
-        if arxiv_id.is_some() {
-            jobs::enqueue(&state.pool, job_kind::FETCH_PDF, payload.clone()).await?;
-        }
-        jobs::enqueue(&state.pool, job_kind::FETCH_REFERENCES, payload).await?;
+    // Ensure the pipeline exists even when a previous request created the work
+    // but failed before all jobs were queued.
+    let payload = serde_json::json!({
+        "version_id": version.id,
+        "work_id": work.id,
+    });
+    jobs::enqueue_unique(
+        &state.pool,
+        job_kind::RESOLVE_METADATA,
+        payload.clone(),
+        &format!("pipeline:{}:{}", job_kind::RESOLVE_METADATA, version.id),
+    )
+    .await?;
+    if arxiv_id.is_some() {
+        jobs::enqueue_unique(
+            &state.pool,
+            job_kind::FETCH_PDF,
+            payload.clone(),
+            &format!("pipeline:{}:{}", job_kind::FETCH_PDF, version.id),
+        )
+        .await?;
     }
+    jobs::enqueue_unique(
+        &state.pool,
+        job_kind::FETCH_REFERENCES,
+        payload,
+        &format!("pipeline:{}:{}", job_kind::FETCH_REFERENCES, version.id),
+    )
+    .await?;
 
     Ok(Json(QuickAddResp {
         work,
@@ -166,12 +180,6 @@ async fn split(
     Json(body): Json<SplitReq>,
 ) -> ApiResult<Json<Work>> {
     Ok(Json(
-        works::split_work(
-            &state.pool,
-            id,
-            body.merge_history_id,
-            body.merged_work_id,
-        )
-        .await?,
+        works::split_work(&state.pool, id, body.merge_history_id, body.merged_work_id).await?,
     ))
 }

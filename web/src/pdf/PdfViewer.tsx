@@ -98,6 +98,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const [flashId, setFlashId] = useState<string | null>(null);
   const [focusPage, setFocusPage] = useState<number | null>(null);
   const blobUrlRef = useRef<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const pageEls = useRef<Map<number, HTMLDivElement>>(new Map());
 
   // Floating selection bubble state (coords relative to scroll container)
@@ -152,7 +153,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       cancelled = true;
       cleanup();
     };
-  }, [versionId, hasPdf, cleanup]);
+  }, [versionId, hasPdf, reloadKey, cleanup]);
 
   const jumpToPage = useCallback((page: number) => {
     setFocusPage(page);
@@ -187,6 +188,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     setError(null);
     try {
       await uploadPdf(versionId, file);
+      setReloadKey((key) => key + 1);
       onUploaded?.();
     } catch (e) {
       setError((e as Error).message);
@@ -290,7 +292,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         {doc &&
           Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
             <PdfPage
-              key={pageNum}
+              key={`${reloadKey}:${pageNum}`}
               doc={doc}
               pageNumber={pageNum}
               evidences={evidences.filter((e) => e.page === pageNum)}
@@ -445,6 +447,7 @@ function PdfPage({
 
   useEffect(() => {
     let cancelled = false;
+    let renderTask: { promise: Promise<void>; cancel: () => void } | null = null;
     (async () => {
       const page = await doc.getPage(pageNumber);
       if (cancelled) return;
@@ -458,12 +461,18 @@ function PdfPage({
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       // pdfjs-dist v4 types omit canvas; runtime accepts canvasContext+viewport
-      await (
+      renderTask = (
         page.render as (params: {
           canvasContext: CanvasRenderingContext2D;
           viewport: ReturnType<PDFPageProxy['getViewport']>;
-        }) => { promise: Promise<void> }
-      )({ canvasContext: ctx, viewport }).promise;
+        }) => { promise: Promise<void>; cancel: () => void }
+      )({ canvasContext: ctx, viewport });
+      try {
+        await renderTask.promise;
+      } catch (error) {
+        if (cancelled) return;
+        throw error;
+      }
 
       // Text layer for selectable text
       const textLayerDiv = textLayerRef.current;
@@ -488,6 +497,7 @@ function PdfPage({
     })();
     return () => {
       cancelled = true;
+      renderTask?.cancel();
       textLayerInst.current?.cancel();
       textLayerInst.current = null;
     };

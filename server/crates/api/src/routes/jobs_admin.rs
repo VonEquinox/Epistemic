@@ -4,10 +4,11 @@ use axum::{Json, Router};
 use epistemic_core::domain::{job_kind, Job};
 use epistemic_core::repo::jobs;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::AdminUser;
 use crate::error::ApiResult;
 use crate::state::AppState;
 
@@ -25,19 +26,33 @@ pub struct BatchDnaReq {
 
 async fn batch_dna(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AdminUser(_): AdminUser,
     Json(body): Json<BatchDnaReq>,
 ) -> ApiResult<Json<serde_json::Value>> {
     if body.version_ids.is_empty() {
-        return Ok(Json(serde_json::json!({ "ok": false, "error": "empty" })));
+        return Err(epistemic_core::AppError::BadRequest("version_ids is empty".into()).into());
     }
-    let job = jobs::enqueue(
+    if body.version_ids.len() > 500 {
+        return Err(
+            epistemic_core::AppError::BadRequest("batch size exceeds 500 versions".into()).into(),
+        );
+    }
+    let mut version_ids = body.version_ids;
+    version_ids.sort_unstable();
+    version_ids.dedup();
+    let mut hasher = Sha256::new();
+    for version_id in &version_ids {
+        hasher.update(version_id.as_bytes());
+    }
+    let dedupe_key = format!("batch-dna:{:x}", hasher.finalize());
+    let job = jobs::enqueue_unique(
         &state.pool,
         job_kind::BATCH_ORCH,
         serde_json::json!({
-            "version_ids": body.version_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+            "version_ids": version_ids.iter().map(Uuid::to_string).collect::<Vec<_>>(),
             "kind": "extract_dna"
         }),
+        &dedupe_key,
     )
     .await?;
     Ok(Json(serde_json::json!({ "ok": true, "job_id": job.id })))
@@ -45,7 +60,7 @@ async fn batch_dna(
 
 async fn list_for_work(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AdminUser(_): AdminUser,
     Path(work_id): Path<Uuid>,
 ) -> ApiResult<Json<Vec<Job>>> {
     Ok(Json(jobs::jobs_for_work(&state.pool, work_id).await?))
@@ -60,16 +75,24 @@ pub struct RequeueReq {
 
 async fn requeue_job(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AdminUser(_): AdminUser,
     Json(body): Json<RequeueReq>,
 ) -> ApiResult<Json<Job>> {
+    const ALLOWED_KINDS: &[&str] = &[
+        job_kind::RESOLVE_METADATA,
+        job_kind::FETCH_PDF,
+        job_kind::EXTRACT_DNA,
+        job_kind::FETCH_REFERENCES,
+        job_kind::UPDATE_NEIGHBORS_CITATION,
+        job_kind::UPDATE_NEIGHBORS_LINEAGE,
+        job_kind::CLASSIFY_CITATION_CONTEXTS,
+        job_kind::EMBED,
+        job_kind::PROPOSE_PAIRS,
+    ];
+    if !ALLOWED_KINDS.contains(&body.kind.as_str()) {
+        return Err(epistemic_core::AppError::BadRequest("unsupported job kind".into()).into());
+    }
     Ok(Json(
-        jobs::requeue(
-            &state.pool,
-            &body.kind,
-            body.version_id,
-            body.work_id,
-        )
-        .await?,
+        jobs::requeue(&state.pool, &body.kind, body.version_id, body.work_id).await?,
     ))
 }

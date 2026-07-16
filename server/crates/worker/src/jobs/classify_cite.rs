@@ -92,7 +92,9 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     let mut created = 0u32;
     for chunk in usable.chunks(BATCH_SIZE) {
         let user = build_user_prompt(&version.title, chunk, &target_work);
-        let (value, usage, model) = llm.complete_json(system, &user, schema.clone(), 4000).await?;
+        let (value, usage, model) = llm
+            .complete_json(system, &user, schema.clone(), 4000)
+            .await?;
         let cost = epistemic_llm::estimate_cost_usd(&model, &usage);
         tracing::info!(
             batch = chunk.len(),
@@ -351,8 +353,14 @@ fn parse_cite_contexts(tei: &str) -> Vec<CiteContext> {
         let coords = attr_from_tag(whole.as_str(), "coords");
         let (page, bbox) = parse_coords(coords.as_deref());
 
-        let start = whole.start().saturating_sub(280);
-        let end = (whole.end() + 200).min(tei.len());
+        let mut start = whole.start().saturating_sub(280);
+        while start > 0 && !tei.is_char_boundary(start) {
+            start -= 1;
+        }
+        let mut end = (whole.end() + 200).min(tei.len());
+        while end > start && !tei.is_char_boundary(end) {
+            end -= 1;
+        }
         let window = &tei[start..end];
         let text = strip_tags(window);
         let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -544,5 +552,17 @@ mod tests {
         );
         assert_eq!(RelationType::from_llm("none"), None);
         assert_eq!(RelationType::from_llm("cites"), None);
+    }
+
+    #[test]
+    fn non_ascii_context_does_not_panic() {
+        let tei = format!(
+            r##"{}<ref type="bibr" target="#b1">[1]</ref>{}"##,
+            "中文前文".repeat(80),
+            "后续内容é".repeat(80)
+        );
+        let contexts = parse_cite_contexts(&tei);
+        assert_eq!(contexts.len(), 1);
+        assert!(contexts[0].text.contains("[1]"));
     }
 }

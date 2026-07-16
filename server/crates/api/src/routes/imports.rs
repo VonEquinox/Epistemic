@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use epistemic_core::domain::{ImportBatch, ImportStatus, VersionKind, job_kind};
+use epistemic_core::domain::{job_kind, ImportBatch, ImportStatus, VersionKind};
 use epistemic_core::repo::{imports, jobs, works};
 use epistemic_core::AppError;
 use serde::Deserialize;
@@ -39,10 +39,12 @@ async fn create_preview(
 
 async fn get_batch(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user): AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<ImportBatch>> {
-    Ok(Json(imports::get_batch(&state.pool, id).await?))
+    Ok(Json(
+        imports::get_batch_for_user(&state.pool, id, user.id).await?,
+    ))
 }
 
 async fn confirm(
@@ -50,12 +52,35 @@ async fn confirm(
     AuthUser(user): AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let batch = imports::get_batch(&state.pool, id).await?;
-    if batch.status != ImportStatus::Preview {
-        return Err(AppError::Conflict("batch already confirmed".into()).into());
-    }
-    imports::set_status(&state.pool, id, ImportStatus::Processing).await?;
+    let batch = imports::get_batch_for_user(&state.pool, id, user.id).await?;
+    imports::begin_confirm(&state.pool, id, user.id).await?;
 
+    let result = confirm_batch(&state, user.id, &batch).await;
+    match result {
+        Ok((created, skipped)) => {
+            imports::set_status(&state.pool, id, ImportStatus::Done).await?;
+            Ok(Json(serde_json::json!({
+                "ok": true,
+                "created": created,
+                "skipped": skipped
+            })))
+        }
+        Err(error) => {
+            if let Err(status_error) =
+                imports::set_status(&state.pool, id, ImportStatus::Failed).await
+            {
+                tracing::error!(%id, error = %status_error, "failed to mark import batch failed");
+            }
+            Err(error.into())
+        }
+    }
+}
+
+async fn confirm_batch(
+    state: &AppState,
+    user_id: Uuid,
+    batch: &ImportBatch,
+) -> epistemic_core::AppResult<(u32, u32)> {
     let lines: Vec<imports::ParsedImportLine> = batch
         .parsed
         .as_ref()
@@ -76,14 +101,13 @@ async fn confirm(
             .or_else(|| line.arxiv_id.as_ref().map(|id| format!("arXiv:{id}")))
             .or_else(|| line.doi.as_ref().map(|d| format!("DOI:{d}")))
             .unwrap_or_else(|| line.raw.clone());
-
         let kind = if line.arxiv_id.is_some() {
             VersionKind::Arxiv
         } else {
             VersionKind::Other
         };
 
-        match works::create_or_get_work(
+        let (work, version, is_new) = works::create_or_get_work(
             &state.pool,
             works::NewVersion {
                 kind,
@@ -97,43 +121,44 @@ async fn confirm(
                 metadata_source: Some("import".into()),
                 author_names: vec![],
             },
-            Some(user.id),
+            Some(user_id),
         )
-        .await
-        {
-            Ok((work, version, is_new)) => {
-                if is_new {
-                    created += 1;
-                    let payload = serde_json::json!({
-                        "version_id": version.id,
-                        "work_id": work.id,
-                    });
-                    let _ = jobs::enqueue(
-                        &state.pool,
-                        job_kind::RESOLVE_METADATA,
-                        payload.clone(),
-                    )
-                    .await;
-                    if line.arxiv_id.is_some() {
-                        let _ = jobs::enqueue(&state.pool, job_kind::FETCH_PDF, payload.clone())
-                            .await;
-                    }
-                    let _ = jobs::enqueue(&state.pool, job_kind::FETCH_REFERENCES, payload).await;
-                } else {
-                    skipped += 1;
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, raw = %line.raw, "import line failed");
-                skipped += 1;
-            }
+        .await?;
+
+        if is_new {
+            created += 1;
+        } else {
+            skipped += 1;
         }
+
+        let payload = serde_json::json!({
+            "version_id": version.id,
+            "work_id": work.id,
+        });
+        jobs::enqueue_unique(
+            &state.pool,
+            job_kind::RESOLVE_METADATA,
+            payload.clone(),
+            &format!("pipeline:{}:{}", job_kind::RESOLVE_METADATA, version.id),
+        )
+        .await?;
+        if line.arxiv_id.is_some() {
+            jobs::enqueue_unique(
+                &state.pool,
+                job_kind::FETCH_PDF,
+                payload.clone(),
+                &format!("pipeline:{}:{}", job_kind::FETCH_PDF, version.id),
+            )
+            .await?;
+        }
+        jobs::enqueue_unique(
+            &state.pool,
+            job_kind::FETCH_REFERENCES,
+            payload,
+            &format!("pipeline:{}:{}", job_kind::FETCH_REFERENCES, version.id),
+        )
+        .await?;
     }
 
-    imports::set_status(&state.pool, id, ImportStatus::Done).await?;
-    Ok(Json(serde_json::json!({
-        "ok": true,
-        "created": created,
-        "skipped": skipped,
-    })))
+    Ok((created, skipped))
 }

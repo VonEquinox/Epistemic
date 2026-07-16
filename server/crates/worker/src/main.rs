@@ -6,6 +6,8 @@ mod pdf_render;
 
 use epistemic_core::domain::job_kind;
 use epistemic_core::repo::jobs as job_repo;
+use futures::FutureExt;
+use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -63,19 +65,69 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let max_attempts = 3i32;
-    let mut handles = Vec::with_capacity(concurrency);
+    let mut workers = tokio::task::JoinSet::new();
     for slot in 0..concurrency {
-        let pool = pool.clone();
-        let ctx = Arc::clone(&ctx);
-        let slot_id = format!("{worker_id}-s{slot:02}");
-        handles.push(tokio::spawn(async move {
-            worker_loop(pool, ctx, slot_id, max_attempts).await;
-        }));
+        spawn_worker(
+            &mut workers,
+            pool.clone(),
+            Arc::clone(&ctx),
+            format!("{worker_id}-s{slot:02}"),
+            max_attempts,
+        );
     }
 
-    // Never returns under normal operation.
-    futures::future::join_all(handles).await;
-    Ok(())
+    loop {
+        match workers.join_next().await {
+            Some(Ok((slot_id, Ok(())))) => {
+                tracing::error!(slot = %slot_id, "worker slot exited unexpectedly; restarting");
+                spawn_worker(
+                    &mut workers,
+                    pool.clone(),
+                    Arc::clone(&ctx),
+                    slot_id,
+                    max_attempts,
+                );
+            }
+            Some(Ok((slot_id, Err(_)))) => {
+                tracing::error!(slot = %slot_id, "worker slot panicked; restarting");
+                spawn_worker(
+                    &mut workers,
+                    pool.clone(),
+                    Arc::clone(&ctx),
+                    slot_id,
+                    max_attempts,
+                );
+            }
+            Some(Err(error)) => {
+                tracing::error!(%error, "worker supervisor task failed");
+                let slot_id = format!("{worker_id}-replacement-{}", Uuid::new_v4());
+                spawn_worker(
+                    &mut workers,
+                    pool.clone(),
+                    Arc::clone(&ctx),
+                    slot_id,
+                    max_attempts,
+                );
+            }
+            None => anyhow::bail!("all worker slots stopped"),
+        }
+    }
+}
+
+fn spawn_worker(
+    workers: &mut tokio::task::JoinSet<(String, Result<(), Box<dyn std::any::Any + Send>>)>,
+    pool: sqlx::PgPool,
+    ctx: Arc<jobs::JobContext>,
+    slot_id: String,
+    max_attempts: i32,
+) {
+    workers.spawn(async move {
+        let returned_id = slot_id.clone();
+        let result = AssertUnwindSafe(worker_loop(pool, ctx, slot_id, max_attempts))
+            .catch_unwind()
+            .await;
+        (returned_id, result)
+    });
 }
 
 async fn worker_loop(
@@ -94,23 +146,46 @@ async fn worker_loop(
                     attempts = job.attempts,
                     "claimed job"
                 );
-                let result = jobs::dispatch(ctx.as_ref(), &job).await;
+                let result = AssertUnwindSafe(jobs::dispatch(ctx.as_ref(), &job, &slot_id))
+                    .catch_unwind()
+                    .await;
                 match result {
-                    Ok(()) => {
-                        if let Err(e) = job_repo::mark_done(&pool, job.id).await {
-                            tracing::error!(error = %e, "mark_done failed");
+                    Ok(Ok(jobs::JobOutcome::Done)) => {
+                        if let Err(error) = job_repo::mark_done(&pool, job.id, &slot_id).await {
+                            tracing::error!(%error, "mark_done failed");
                         }
                     }
-                    Err(e) => {
-                        tracing::error!(error = %e, kind = %job.kind, slot = %slot_id, "job failed");
-                        let _ = job_repo::mark_failed(
+                    Ok(Ok(jobs::JobOutcome::Rescheduled)) => {}
+                    Ok(Err(error)) => {
+                        tracing::error!(%error, kind = %job.kind, slot = %slot_id, "job failed");
+                        if let Err(mark_error) = job_repo::mark_failed(
                             &pool,
                             job.id,
-                            &e.to_string(),
+                            &slot_id,
+                            &error.to_string(),
                             job.attempts,
                             max_attempts,
                         )
-                        .await;
+                        .await
+                        {
+                            tracing::error!(%mark_error, "mark_failed failed");
+                        }
+                    }
+                    Err(_) => {
+                        let error = "job panicked";
+                        tracing::error!(kind = %job.kind, slot = %slot_id, "{error}");
+                        if let Err(mark_error) = job_repo::mark_failed(
+                            &pool,
+                            job.id,
+                            &slot_id,
+                            error,
+                            job.attempts,
+                            max_attempts,
+                        )
+                        .await
+                        {
+                            tracing::error!(%mark_error, "mark_failed after panic failed");
+                        }
                     }
                 }
             }

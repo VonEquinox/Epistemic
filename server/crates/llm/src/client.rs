@@ -155,7 +155,20 @@ impl LlmClient {
         schema: serde_json::Value,
         max_tokens: u32,
     ) -> Result<(serde_json::Value, Usage, String), LlmError> {
-        let req = ChatCompletionRequest {
+        let req = self.json_request_vision(system, user_text, image_data_urls, schema, max_tokens);
+        self.complete_json_request(req).await
+    }
+
+    /// Build a multimodal Chat Completions request for direct or Batch API use.
+    pub fn json_request_vision(
+        &self,
+        system: &str,
+        user_text: &str,
+        image_data_urls: &[String],
+        schema: serde_json::Value,
+        max_tokens: u32,
+    ) -> ChatCompletionRequest {
+        ChatCompletionRequest {
             model: self.default_model.clone(),
             messages: vec![
                 Message::system(system),
@@ -171,8 +184,7 @@ impl LlmClient {
                     schema,
                 }),
             }),
-        };
-        self.complete_json_request(req).await
+        }
     }
 
     async fn complete_json_request(
@@ -182,7 +194,10 @@ impl LlmClient {
         let resp = self.chat_completions(req).await?;
         let text = resp.text().ok_or(LlmError::EmptyContent)?;
         let value: serde_json::Value = parse_json_lenient(&text).map_err(|e| {
-            LlmError::Other(anyhow::anyhow!("json parse: {e}; text={}", truncate(&text, 800)))
+            LlmError::Other(anyhow::anyhow!(
+                "json parse: {e}; text={}",
+                truncate(&text, 800)
+            ))
         })?;
         Ok((value, resp.usage, resp.model))
     }

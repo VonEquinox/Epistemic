@@ -52,8 +52,11 @@ function bundleEdges(edges) {
   const map = new Map();
   for (const e of edges) {
     const sg = e.bundle_key?.split('|')[2] ?? semanticGroupOf(e.relation_type);
-    const pair = [e.source_id, e.target_id].sort().join('|');
-    const key = `${pair}|${sg}`;
+    const symmetric = e.relation_type === 'alternative_to';
+    const pair = symmetric
+      ? [e.source_id, e.target_id].sort().join('|')
+      : `${e.source_id}|${e.target_id}`;
+    const key = `${symmetric ? 's' : 'd'}|${pair}|${sg}`;
     const existing = map.get(key);
     if (!existing) {
       map.set(key, {
@@ -61,6 +64,7 @@ function bundleEdges(edges) {
         source_id: e.source_id,
         target_id: e.target_id,
         semantic_group: sg,
+        symmetric,
         count: 1,
         status: e.review_status,
         review_count: e.review_count,
@@ -77,7 +81,9 @@ function bundleEdges(edges) {
   }
   const byPair = new Map();
   for (const b of map.values()) {
-    const pair = [b.source_id, b.target_id].sort().join('|');
+    const pair = b.symmetric
+      ? `s|${[b.source_id, b.target_id].sort().join('|')}`
+      : `d|${b.source_id}|${b.target_id}`;
     if (!byPair.has(pair)) byPair.set(pair, []);
     byPair.get(pair).push(b);
   }
@@ -181,11 +187,17 @@ const edges = [
   },
 ];
 const bundles = bundleEdges(edges);
-// method (2), experiment (2), argument (1), reading (1) → cap 3
-assert.ok(bundles.length <= 3, `expected ≤3 bundles, got ${bundles.length}`);
-const method = bundles.find((b) => b.semantic_group === 'method');
-assert.ok(method);
-assert.equal(method.count, 2);
+// Opposite directed method edges must remain separate bundles.
+const forwardMethod = bundles.find(
+  (b) => b.semantic_group === 'method' && b.source_id === 'a' && b.target_id === 'b',
+);
+const reverseMethod = bundles.find(
+  (b) => b.semantic_group === 'method' && b.source_id === 'b' && b.target_id === 'a',
+);
+assert.ok(forwardMethod);
+assert.ok(reverseMethod);
+assert.equal(forwardMethod.count, 1);
+assert.equal(reverseMethod.count, 1);
 
 const comb = combineNeighbors(
   {

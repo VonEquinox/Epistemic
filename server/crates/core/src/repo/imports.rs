@@ -120,12 +120,55 @@ pub async fn get_batch(pool: &PgPool, id: Uuid) -> AppResult<ImportBatch> {
     .ok_or_else(|| AppError::NotFound(format!("import batch {id}")))
 }
 
+pub async fn get_batch_for_user(pool: &PgPool, id: Uuid, user_id: Uuid) -> AppResult<ImportBatch> {
+    sqlx::query_as::<_, ImportBatch>(
+        r#"
+        SELECT id, created_by, raw_input, parsed, status, created_at
+        FROM import_batches
+        WHERE id = $1 AND created_by = $2
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("import batch {id}")))
+}
+
+/// Atomically claim a preview/failed batch for confirmation.
+pub async fn begin_confirm(pool: &PgPool, id: Uuid, user_id: Uuid) -> AppResult<()> {
+    let result = sqlx::query(
+        r#"
+        UPDATE import_batches
+        SET status = 'processing', processing_started_at = now()
+        WHERE id = $1 AND created_by = $2
+          AND (status IN ('preview', 'failed')
+               OR (status = 'processing' AND processing_started_at < now() - interval '2 hours'))
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::Conflict(
+            "batch is already processing or completed".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn set_status(pool: &PgPool, id: Uuid, status: ImportStatus) -> AppResult<()> {
-    sqlx::query(r#"UPDATE import_batches SET status = $2 WHERE id = $1"#)
-        .bind(id)
-        .bind(status)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        r#"UPDATE import_batches
+        SET status = $2,
+            processing_started_at = CASE WHEN $2 = 'processing' THEN now() ELSE NULL END
+        WHERE id = $1"#,
+    )
+    .bind(id)
+    .bind(status)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

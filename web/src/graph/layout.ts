@@ -107,6 +107,7 @@ export interface EdgeBundle {
   source_id: string;
   target_id: string;
   semantic_group: string;
+  symmetric: boolean;
   count: number;
   /** Representative status: disputed > confirmed > unreviewed */
   status: string;
@@ -142,8 +143,11 @@ export function bundleEdges(edges: EgoEdge[]): EdgeBundle[] {
   const map = new Map<string, EdgeBundle>();
   for (const e of edges) {
     const sg = e.bundle_key?.split('|')[2] ?? semanticGroupOf(e.relation_type);
-    const pair = [e.source_id, e.target_id].sort().join('|');
-    const key = `${pair}|${sg}`;
+    const symmetric = e.relation_type === 'alternative_to';
+    const pair = symmetric
+      ? [e.source_id, e.target_id].sort().join('|')
+      : `${e.source_id}|${e.target_id}`;
+    const key = `${symmetric ? 's' : 'd'}|${pair}|${sg}`;
     const existing = map.get(key);
     if (!existing) {
       map.set(key, {
@@ -151,6 +155,7 @@ export function bundleEdges(edges: EgoEdge[]): EdgeBundle[] {
         source_id: e.source_id,
         target_id: e.target_id,
         semantic_group: sg,
+        symmetric,
         count: 1,
         status: e.review_status,
         review_count: e.review_count,
@@ -171,7 +176,9 @@ export function bundleEdges(edges: EgoEdge[]): EdgeBundle[] {
   // Cap 3 bundles per unordered pair
   const byPair = new Map<string, EdgeBundle[]>();
   for (const b of map.values()) {
-    const pair = [b.source_id, b.target_id].sort().join('|');
+    const pair = b.symmetric
+      ? `s|${[b.source_id, b.target_id].sort().join('|')}`
+      : `d|${b.source_id}|${b.target_id}`;
     if (!byPair.has(pair)) byPair.set(pair, []);
     byPair.get(pair)!.push(b);
   }

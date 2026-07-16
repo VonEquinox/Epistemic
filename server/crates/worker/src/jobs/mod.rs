@@ -23,41 +23,49 @@ pub struct JobContext {
     pub http: reqwest::Client,
 }
 
-pub async fn dispatch(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobOutcome {
+    Done,
+    Rescheduled,
+}
+
+pub async fn dispatch(ctx: &JobContext, job: &Job, worker_id: &str) -> anyhow::Result<JobOutcome> {
     match job.kind.as_str() {
-        job_kind::RESOLVE_METADATA => resolve::run(ctx, job).await,
-        job_kind::FETCH_PDF => fetch_pdf::run(ctx, job).await,
-        // GROBID removed: legacy job kind falls through to VLM DNA extraction.
+        job_kind::RESOLVE_METADATA => resolve::run(ctx, job).await.map(|_| JobOutcome::Done),
+        job_kind::FETCH_PDF => fetch_pdf::run(ctx, job).await.map(|_| JobOutcome::Done),
         job_kind::GROBID_PARSE => {
-            tracing::warn!(id = %job.id, "grobid_parse deprecated — running extract_dna (VLM) instead");
-            extract::run(ctx, job).await
+            tracing::warn!(id = %job.id, "grobid_parse deprecated — running extract_dna instead");
+            extract::run(ctx, job).await.map(|_| JobOutcome::Done)
         }
-        job_kind::EXTRACT_DNA => extract::run(ctx, job).await,
-        job_kind::FETCH_REFERENCES => references::run(ctx, job).await,
-        job_kind::UPDATE_NEIGHBORS_CITATION => neighbors::update_citation(ctx, job).await,
-        job_kind::UPDATE_NEIGHBORS_LINEAGE => neighbors::update_lineage(ctx, job).await,
-        job_kind::CLASSIFY_CITATION_CONTEXTS => classify_cite::run(ctx, job).await,
-        job_kind::PROPOSE_PAIRS => propose::run(ctx, job).await,
-        job_kind::BATCH_ORCH => batch_orch::run(ctx, job).await,
-        job_kind::EMBED => embed::run(ctx, job).await,
-        other => {
-            tracing::warn!(kind = other, "unknown job kind, marking done");
-            Ok(())
+        job_kind::EXTRACT_DNA => extract::run(ctx, job).await.map(|_| JobOutcome::Done),
+        job_kind::FETCH_REFERENCES => references::run(ctx, job).await.map(|_| JobOutcome::Done),
+        job_kind::UPDATE_NEIGHBORS_CITATION => neighbors::update_citation(ctx, job)
+            .await
+            .map(|_| JobOutcome::Done),
+        job_kind::UPDATE_NEIGHBORS_LINEAGE => neighbors::update_lineage(ctx, job)
+            .await
+            .map(|_| JobOutcome::Done),
+        job_kind::CLASSIFY_CITATION_CONTEXTS => {
+            classify_cite::run(ctx, job).await.map(|_| JobOutcome::Done)
         }
+        job_kind::PROPOSE_PAIRS => propose::run(ctx, job).await.map(|_| JobOutcome::Done),
+        job_kind::BATCH_ORCH => batch_orch::run(ctx, job, worker_id).await,
+        job_kind::EMBED => embed::run(ctx, job).await.map(|_| JobOutcome::Done),
+        other => anyhow::bail!("unknown job kind: {other}"),
     }
 }
 
 pub fn version_id(job: &Job) -> anyhow::Result<uuid::Uuid> {
     job.payload
         .get("version_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| uuid::Uuid::parse_str(s).ok())
+        .and_then(|value| value.as_str())
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
         .ok_or_else(|| anyhow::anyhow!("payload.version_id missing"))
 }
 
 pub fn work_id(job: &Job) -> Option<uuid::Uuid> {
     job.payload
         .get("work_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| uuid::Uuid::parse_str(s).ok())
+        .and_then(|value| value.as_str())
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
 }

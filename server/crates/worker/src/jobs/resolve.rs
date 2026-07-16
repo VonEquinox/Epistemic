@@ -1,7 +1,7 @@
 use super::{version_id, JobContext};
 use crate::arxiv_html;
-use epistemic_core::domain::{job_kind, Job};
-use epistemic_core::repo::{jobs, works};
+use epistemic_core::domain::Job;
+use epistemic_core::repo::works;
 
 /// Resolve title/abstract/authors from arXiv HTML experimental (no export.arxiv.org API).
 pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
@@ -30,12 +30,10 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         .title
         .filter(|t| !t.is_empty() && !t.eq_ignore_ascii_case("arxiv"))
         .unwrap_or_else(|| version.title.clone());
-    let abstract_text = doc
-        .abstract_text
-        .unwrap_or_else(|| {
-            // First ~1500 chars of body as weak abstract if missing.
-            doc.full_text.chars().take(1500).collect()
-        });
+    let abstract_text = doc.abstract_text.unwrap_or_else(|| {
+        // First ~1500 chars of body as weak abstract if missing.
+        doc.full_text.chars().take(1500).collect()
+    });
 
     works::update_version_metadata(
         &ctx.pool,
@@ -85,19 +83,11 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         }
     }
 
-    // DNA from full HTML text (not export API, not PDF pages).
-    let payload = serde_json::json!({
-        "version_id": vid,
-        "work_id": version.work_id,
-        "source": "arxiv_html",
-    });
-    jobs::enqueue(&ctx.pool, job_kind::EXTRACT_DNA, payload).await?;
-
     tracing::info!(
         %arxiv,
         title = %title,
         text_chars = doc.full_text.chars().count(),
-        "HTML metadata resolved; extract_dna enqueued"
+        "HTML metadata resolved; waiting for PDF fetch/upload"
     );
     Ok(())
 }

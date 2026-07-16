@@ -10,7 +10,7 @@ RUN cargo build --release -p ${BIN}
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 \
+    ca-certificates libssl3 poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 ARG BIN=epistemic-api
 COPY --from=builder /app/target/release/${BIN} /usr/local/bin/app
