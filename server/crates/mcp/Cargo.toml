@@ -1,0 +1,22 @@
+[package]
+name = "epistemic-mcp"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "epistemic-mcp"
+path = "src/main.rs"
+
+[dependencies]
+epistemic-core = { path = "../core" }
+rmcp = { version = "2.2.0", features = ["transport-io"] }
+tokio = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+dotenvy = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

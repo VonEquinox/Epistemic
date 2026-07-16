@@ -39,6 +39,17 @@ export interface User {
 }
 
 
+export interface McpTokenSummary {
+  id: string;
+  name: string;
+  last_used_at?: string | null;
+  created_at: string;
+}
+
+export interface CreatedMcpToken extends McpTokenSummary {
+  token: string;
+}
+
 export interface Invite {
   id: string;
   email: string;

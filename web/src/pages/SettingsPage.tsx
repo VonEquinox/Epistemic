@@ -1,6 +1,13 @@
 import { FormEvent, useState } from 'react';
-import { useInvite, useMe, useUsers } from '../api/hooks';
-import type { Invite } from '../api/types';
+import {
+  useCreateMcpToken,
+  useInvite,
+  useMcpTokens,
+  useMe,
+  useRevokeMcpToken,
+  useUsers,
+} from '../api/hooks';
+import type { CreatedMcpToken, Invite } from '../api/types';
 
 function roleLabel(role: string) {
   return role === 'admin' ? '管理员' : '成员';
@@ -13,6 +20,12 @@ export function SettingsPage() {
   const [email, setEmail] = useState('');
   const [lastInvite, setLastInvite] = useState<Invite | null>(null);
   const [copied, setCopied] = useState(false);
+  const { data: mcpTokens } = useMcpTokens();
+  const createMcpToken = useCreateMcpToken();
+  const revokeMcpToken = useRevokeMcpToken();
+  const [mcpTokenName, setMcpTokenName] = useState('Codex');
+  const [newMcpToken, setNewMcpToken] = useState<CreatedMcpToken | null>(null);
+  const [mcpCopied, setMcpCopied] = useState(false);
 
   const isAdmin = me?.role === 'admin';
   const invitePath = lastInvite ? `/invite/${lastInvite.token}` : '';
@@ -65,6 +78,75 @@ export function SettingsPage() {
           </div>
         </section>
       )}
+
+      <section className="border border-ink-200 rounded-lg p-4 bg-white space-y-3">
+        <div>
+          <h2 className="font-medium text-sm text-ink-800">Codex / MCP 访问令牌</h2>
+          <p className="mt-1 text-xs text-ink-500">令牌只显示一次，用于让你的 MCP 客户端以当前账号读取有权限的研究图。</p>
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={mcpTokenName}
+            onChange={(event) => setMcpTokenName(event.target.value)}
+            className="flex-1 rounded-md border border-ink-200 px-3 py-2 text-sm"
+            placeholder="令牌名称"
+          />
+          <button
+            type="button"
+            disabled={!mcpTokenName.trim() || createMcpToken.isPending}
+            onClick={() =>
+              createMcpToken.mutate(mcpTokenName.trim(), {
+                onSuccess: (token) => {
+                  setNewMcpToken(token);
+                  setMcpCopied(false);
+                },
+              })
+            }
+            className="rounded-md bg-ink-900 px-3 py-2 text-sm text-white disabled:opacity-50"
+          >
+            生成令牌
+          </button>
+        </div>
+        {newMcpToken && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+            <div className="text-xs text-amber-800">请立即复制，关闭后无法再次查看。</div>
+            <code className="block break-all rounded border border-amber-200 bg-white p-2 text-xs">{newMcpToken.token}</code>
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(newMcpToken.token);
+                setMcpCopied(true);
+              }}
+              className="text-xs text-accent hover:underline"
+            >
+              {mcpCopied ? '已复制' : '复制令牌'}
+            </button>
+          </div>
+        )}
+        {mcpTokens && mcpTokens.length > 0 && (
+          <ul className="divide-y divide-ink-100 text-sm">
+            {mcpTokens.map((token) => (
+              <li key={token.id} className="flex items-center justify-between gap-3 py-2">
+                <div>
+                  <div className="font-medium text-ink-700">{token.name}</div>
+                  <div className="text-xs text-ink-400">
+                    创建于 {new Date(token.created_at).toLocaleString()}
+                    {token.last_used_at ? ` · 最近使用 ${new Date(token.last_used_at).toLocaleString()}` : ''}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={revokeMcpToken.isPending}
+                  onClick={() => revokeMcpToken.mutate(token.id)}
+                  className="text-xs text-rose-500 hover:text-rose-700"
+                >
+                  撤销
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {isAdmin && (
         <section className="border border-ink-200 rounded-lg p-4 bg-white space-y-3">

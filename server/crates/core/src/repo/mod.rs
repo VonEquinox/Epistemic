@@ -7,6 +7,7 @@ pub mod graph;
 pub mod groups;
 pub mod imports;
 pub mod jobs;
+pub mod mcp_tokens;
 pub mod projects;
 pub mod reading;
 pub mod relations;

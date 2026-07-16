@@ -36,6 +36,10 @@ npm install
 npm run dev                    # :5173
 ```
 
+## Codex / MCP
+
+Epistemic includes a read-only MCP server that exposes graph snapshots, node comments, stored paper text, and node relations with per-user permissions. See [`docs/MCP.md`](docs/MCP.md).
+
 ## 仓库结构
 
 ```

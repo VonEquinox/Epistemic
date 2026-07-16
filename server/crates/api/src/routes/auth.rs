@@ -1,12 +1,13 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use epistemic_core::domain::{Invite, UserPublic, UserRole};
-use epistemic_core::repo::users;
+use epistemic_core::repo::{mcp_tokens, users};
 use epistemic_core::AppError;
 use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::auth::{AdminUser, AuthUser, SESSION_USER_KEY};
 use crate::error::{ApiError, ApiResult};
@@ -20,6 +21,8 @@ pub fn router() -> Router<AppState> {
         .route("/register", post(register))
         .route("/invites", post(create_invite))
         .route("/users", get(list_users))
+        .route("/mcp-tokens", get(list_mcp_tokens).post(create_mcp_token))
+        .route("/mcp-tokens/{id}", axum::routing::delete(revoke_mcp_token))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -114,4 +117,40 @@ async fn list_users(
     AuthUser(_): AuthUser,
 ) -> ApiResult<Json<Vec<UserPublic>>> {
     Ok(Json(users::list_users(&state.pool).await?))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateMcpTokenReq {
+    pub name: Option<String>,
+}
+
+async fn create_mcp_token(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(body): Json<CreateMcpTokenReq>,
+) -> ApiResult<Json<mcp_tokens::CreatedMcpToken>> {
+    Ok(Json(
+        mcp_tokens::create(
+            &state.pool,
+            user.id,
+            body.name.as_deref().unwrap_or("Codex"),
+        )
+        .await?,
+    ))
+}
+
+async fn list_mcp_tokens(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> ApiResult<Json<Vec<mcp_tokens::McpTokenSummary>>> {
+    Ok(Json(mcp_tokens::list_for_user(&state.pool, user.id).await?))
+}
+
+async fn revoke_mcp_token(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    mcp_tokens::revoke(&state.pool, id, user.id).await?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

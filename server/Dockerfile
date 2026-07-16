@@ -1,5 +1,5 @@
-# Multi-stage build for epistemic-api / epistemic-worker
-FROM rust:1.85-bookworm AS builder
+# Multi-stage build for epistemic-api / epistemic-worker / epistemic-mcp
+FROM rust:1.88-bookworm AS builder
 WORKDIR /app
 ARG BIN=epistemic-api
 

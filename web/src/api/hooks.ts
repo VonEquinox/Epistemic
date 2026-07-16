@@ -14,6 +14,8 @@ import type {
   Invite,
   Job,
   MapResponse,
+  McpTokenSummary,
+  CreatedMcpToken,
   NodeComment,
   Project,
   ReadingLevel,
@@ -49,6 +51,30 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => api.post('/auth/logout'),
     onSuccess: () => qc.setQueryData(['me'], null),
+  });
+}
+
+export function useMcpTokens() {
+  return useQuery({
+    queryKey: ['mcp-tokens'],
+    queryFn: () => api.get<McpTokenSummary[]>('/auth/mcp-tokens'),
+  });
+}
+
+export function useCreateMcpToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api.post<CreatedMcpToken>('/auth/mcp-tokens', { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mcp-tokens'] }),
+  });
+}
+
+export function useRevokeMcpToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete<{ ok: boolean }>(`/auth/mcp-tokens/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mcp-tokens'] }),
   });
 }
 
