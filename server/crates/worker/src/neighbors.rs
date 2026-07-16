@@ -156,7 +156,7 @@ pub async fn update_lineage(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         SELECT
             src.anchor_work_id AS a,
             tgt.anchor_work_id AS b,
-            CASE WHEN r.review_status = 'confirmed' THEN 1.0 ELSE 2.0 END AS edge_len
+            (CASE WHEN r.review_status = 'confirmed' THEN 1.0 ELSE 2.0 END)::float8 AS edge_len
         FROM relations r
         JOIN relation_members src ON src.relation_id = r.id AND src.role = 'source'
         JOIN relation_members tgt ON tgt.relation_id = r.id AND tgt.role = 'target'

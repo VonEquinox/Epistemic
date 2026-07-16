@@ -36,8 +36,8 @@ export function combineNeighbors(
   return out;
 }
 
-/** Spring length from combined score. Lmin=40, Lmax=280 */
-export function springLength(score: number, lmin = 40, lmax = 280): number {
+/** Spring length from combined score. Lmin=80, Lmax=420 */
+export function springLength(score: number, lmin = 80, lmax = 420): number {
   const s = Math.max(0, Math.min(1, score));
   return lmin + (lmax - lmin) * (1 - s);
 }

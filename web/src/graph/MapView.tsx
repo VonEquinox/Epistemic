@@ -12,6 +12,7 @@ import {
   unconnectedNodes,
   lodFromZoom,
   readerBorderWidth,
+  bundleEdges,
 } from './layout';
 
 cytoscape.use(fcose);
@@ -31,6 +32,7 @@ const HIGH_RISK = new Set(['fails_to_reproduce', 'contradicts_claim']);
 function visibleMapEdges(edges: MapEdge[] | undefined, showCandidates: boolean): MapEdge[] {
   if (!edges) return [];
   return edges.filter((e) => {
+    if (e.relation_type === 'cites') return false; // meta layer, hidden on the map
     if (e.review_status === 'rejected') return false;
     if (HIGH_RISK.has(e.relation_type) && e.review_status !== 'confirmed') return false;
     if (!showCandidates && e.review_status === 'unreviewed') return false;
@@ -61,9 +63,22 @@ export function MapView({
     const unconnected = unconnectedNodes(data.nodes, combined);
 
     const elements: cytoscape.ElementDefinition[] = [];
-    data.nodes.forEach((n, i) => {
+    // Park semantically-isolated papers in a tidy grid on the right instead of
+    // one tall overlapping column.
+    let parkIdx = 0;
+    const PARK_COLS = 4;
+    const PARK_X0 = 640;
+    const PARK_STEP = 150;
+    data.nodes.forEach((n) => {
       const pos = seedPosition(n.work_id);
       const locked = unconnected.has(n.work_id);
+      let position = pos;
+      if (locked) {
+        const col = parkIdx % PARK_COLS;
+        const row = Math.floor(parkIdx / PARK_COLS);
+        position = { x: PARK_X0 + col * PARK_STEP, y: -320 + row * 60 };
+        parkIdx += 1;
+      }
       elements.push({
         data: {
           id: n.work_id,
@@ -73,7 +88,7 @@ export function MapView({
           year: n.year,
           border_w: readerBorderWidth(n.readers),
         },
-        position: locked ? { x: 420, y: -200 + i * 18 } : pos,
+        position,
         locked,
       });
     });
@@ -99,17 +114,34 @@ export function MapView({
       }
     }
 
-    // Assertion edges (hidden until near LOD)
-    for (const e of assertionEdges) {
+    // Assertion edges bundled by (pair × semantic group): collapses the many
+    // parallel `alternative_to`/`uses_method_from` relations between the same
+    // two papers into ≤3 edges instead of a fan of overlapping arrows.
+    const bundles = bundleEdges(
+      assertionEdges.map((e) => ({
+        relation_id: e.relation_id,
+        source_id: e.source_work_id,
+        target_id: e.target_work_id,
+        relation_type: e.relation_type,
+        review_status: e.review_status,
+        source_layer: e.source_layer,
+        confidence: e.confidence,
+        explanation: e.explanation,
+        review_count: e.review_count,
+      })),
+    );
+    for (const b of bundles) {
       elements.push({
         data: {
-          id: e.relation_id,
-          source: e.source_work_id,
-          target: e.target_work_id,
-          label: e.relation_type.replace(/_/g, ' '),
-          status: e.review_status,
-          type: e.relation_type,
-          review_count: e.review_count,
+          id: `bundle-${b.key}`,
+          source: b.source_id,
+          target: b.target_id,
+          label: b.label,
+          status: b.status,
+          type: b.semantic_group,
+          review_count: b.review_count,
+          relation_ids: b.relation_ids,
+          count: b.count,
           kind: 'assertion',
         },
         classes: 'assertion',
@@ -144,15 +176,27 @@ export function MapView({
           selector: 'edge.assertion',
           style: { display: 'none' },
         },
+        {
+          // Bundled edges (multiple relations between the same pair) read heavier.
+          selector: 'edge[count > 1]',
+          style: {
+            width: 2,
+            'line-opacity': 0.6,
+          },
+        },
       ] as cytoscape.StylesheetStyle[],
       layout: {
         name: 'fcose',
         animate: false,
         randomize: false,
-        quality: 'default',
+        quality: 'proof',
         idealEdgeLength: (edge: cytoscape.EdgeSingular) =>
-          edge.data('idealEdgeLength') ?? 120,
-        nodeRepulsion: () => 4500,
+          edge.data('idealEdgeLength') ?? 200,
+        nodeRepulsion: () => 24000,
+        nodeSeparation: 120,
+        gravity: 0.15,
+        gravityRange: 4.0,
+        numIter: 3000,
         packing: 'true',
       } as cytoscape.LayoutOptions,
       minZoom: 0.2,
@@ -190,7 +234,30 @@ export function MapView({
       onOpenEgo(evt.target.id());
     });
     cy.on('tap', 'edge.assertion', (evt) => {
-      onSelectEdge?.(evt.target.id());
+      const ids = evt.target.data('relation_ids') as string[] | undefined;
+      const first = ids && ids.length > 0 ? ids[0] : evt.target.id();
+      onSelectEdge?.(first);
+    });
+    cy.on('mouseover', 'edge.assertion', (evt) => {
+      evt.target.addClass('hovered');
+    });
+    cy.on('mouseout', 'edge.assertion', (evt) => {
+      evt.target.removeClass('hovered');
+    });
+    // Highlight a node's own relations on hover; dim the rest so a dense
+    // neighbourhood is readable without clicking.
+    cy.on('mouseover', 'node', (evt) => {
+      const node = evt.target;
+      const connected = node.connectedEdges('.assertion');
+      connected.addClass('hovered');
+      cy.batch(() => {
+        cy.edges('.assertion').not(connected).style('line-opacity', 0.06);
+      });
+    });
+    cy.on('mouseout', 'node', () => {
+      cy.batch(() => {
+        cy.edges('.assertion').removeClass('hovered').style('line-opacity', '');
+      });
     });
     cy.on('zoom', () => applyLod(cy.zoom()));
     applyLod(cy.zoom());
@@ -224,8 +291,10 @@ export function MapView({
       animationDuration: 400,
       randomize: false,
       idealEdgeLength: (edge: cytoscape.EdgeSingular) =>
-        edge.data('idealEdgeLength') ?? 120,
-      nodeRepulsion: () => 4500,
+        edge.data('idealEdgeLength') ?? 200,
+      nodeRepulsion: () => 24000,
+      nodeSeparation: 120,
+      gravity: 0.15,
     } as cytoscape.LayoutOptions).run();
   }, [weights, topicEnabled, data.neighbors]);
 

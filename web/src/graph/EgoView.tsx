@@ -102,6 +102,14 @@ export function EgoView({ data, onSelectBundle, onSelectNode }: Props) {
           },
         },
         {
+          // Ego view is focused (few edges) — always show relation labels.
+          selector: 'edge',
+          style: {
+            label: 'data(label)',
+            'line-opacity': 0.9,
+          },
+        },
+        {
           selector: 'edge[count > 1]',
           style: {
             width: 2.5,
@@ -114,8 +122,9 @@ export function EgoView({ data, onSelectBundle, onSelectNode }: Props) {
         name: 'fcose',
         animate: false,
         randomize: false,
-        nodeRepulsion: () => 6000,
-        idealEdgeLength: () => 100,
+        nodeRepulsion: () => 14000,
+        nodeSeparation: 90,
+        idealEdgeLength: () => 150,
       } as cytoscape.LayoutOptions,
       minZoom: 0.3,
       maxZoom: 3,

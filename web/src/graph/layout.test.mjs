@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 
 // Inline mirrors of layout.ts pure functions (keep in sync)
-function springLength(score, lmin = 40, lmax = 280) {
+function springLength(score, lmin = 80, lmax = 420) {
   const s = Math.max(0, Math.min(1, score));
   return lmin + (lmax - lmin) * (1 - s);
 }
@@ -116,9 +116,9 @@ function combineNeighbors(neighbors, weights, topicEnabled) {
 }
 
 // --- tests ---
-assert.equal(springLength(1), 40);
-assert.equal(springLength(0), 280);
-assert.ok(Math.abs(springLength(0.5) - 160) < 1e-9);
+assert.equal(springLength(1), 80);
+assert.equal(springLength(0), 420);
+assert.ok(Math.abs(springLength(0.5) - 250) < 1e-9);
 assert.equal(lodFromZoom(0.3), 'far');
 assert.equal(lodFromZoom(0.9), 'mid');
 assert.equal(lodFromZoom(1.5), 'near');
