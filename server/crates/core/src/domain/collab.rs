@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use super::{AnnotationKind, ClaimVerdict, ReadingLevel, Visibility};
+use super::{AnnotationKind, ClaimVerdict, CommentKind, ReadingLevel, Visibility};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct ClaimJudgment {
@@ -38,6 +38,21 @@ pub struct Annotation {
     pub parent_id: Option<Uuid>,
     pub resolved: bool,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct NodeComment {
+    pub id: Uuid,
+    pub graph_id: Uuid,
+    pub work_id: Uuid,
+    pub user_id: Uuid,
+    pub author_name: String,
+    pub kind: CommentKind,
+    pub visibility: Visibility,
+    pub body: String,
+    pub parent_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]

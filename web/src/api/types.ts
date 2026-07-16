@@ -27,6 +27,7 @@ export type ClaimVerdict =
   | 'unclear';
 
 export type AnnotationKind = 'note' | 'conjecture' | 'question';
+export type CommentKind = 'comment' | 'idea' | 'thinking' | 'review' | 'question' | 'critique';
 export type Visibility = 'private' | 'team';
 
 export interface User {
@@ -166,6 +167,20 @@ export interface Annotation {
   resolved?: boolean;
   version_id?: string | null;
   created_at: string;
+}
+
+export interface NodeComment {
+  id: string;
+  graph_id: string;
+  work_id: string;
+  user_id: string;
+  author_name: string;
+  kind: CommentKind;
+  visibility: Visibility;
+  body: string;
+  parent_id?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RelationDetail {

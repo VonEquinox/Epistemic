@@ -1,12 +1,17 @@
 import { useUiStore } from '../stores/ui';
 import { useWork } from '../api/hooks';
 import { PaperCard } from './PaperCard';
+import { NodeComments } from './NodeComments';
 import { Link, useNavigate } from 'react-router-dom';
 
 export function Drawer() {
   const id = useUiStore((s) => s.selectedWorkId);
   const open = useUiStore((s) => s.drawerOpen);
   const selectWork = useUiStore((s) => s.selectWork);
+  const graphId = useUiStore((s) => s.activeGraphId);
+  const detailHref = graphId
+    ? `/papers/${id}?graph=${encodeURIComponent(graphId)}`
+    : `/papers/${id}`;
   const { data, isLoading, error } = useWork(id ?? undefined);
   const navigate = useNavigate();
 
@@ -18,7 +23,7 @@ export function Drawer() {
         <span className="text-sm font-medium text-ink-700">论文卡片</span>
         <div className="flex gap-2">
           <Link
-            to={`/papers/${id}`}
+            to={detailHref}
             className="text-xs text-accent hover:underline"
           >
             全页
@@ -43,16 +48,20 @@ export function Drawer() {
           <p className="text-rose-600 text-sm">{(error as Error).message}</p>
         )}
         {data && (
-          <PaperCard
-            card={data}
-            onJumpEvidence={(ev) => {
-              // Drawer has no PDF pane — open full paper detail at evidence.
-              const q = new URLSearchParams();
-              q.set('evidence', ev.id);
-              if (ev.page) q.set('page', String(ev.page));
-              navigate(`/papers/${id}?${q.toString()}`);
-            }}
-          />
+          <>
+            <PaperCard
+              card={data}
+              onJumpEvidence={(ev) => {
+                // Drawer has no PDF pane — open full paper detail at evidence.
+                const q = new URLSearchParams();
+                if (graphId) q.set('graph', graphId);
+                q.set('evidence', ev.id);
+                if (ev.page) q.set('page', String(ev.page));
+                navigate(`/papers/${id}?${q.toString()}`);
+              }}
+            />
+            <NodeComments graphId={graphId} workId={id} />
+          </>
         )}
       </div>
     </aside>

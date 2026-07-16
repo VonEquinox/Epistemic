@@ -186,6 +186,18 @@ pub enum AnnotationKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, ToSchema)]
+#[sqlx(type_name = "comment_kind", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum CommentKind {
+    Comment,
+    Idea,
+    Thinking,
+    Review,
+    Question,
+    Critique,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, ToSchema)]
 #[sqlx(type_name = "visibility", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum Visibility {

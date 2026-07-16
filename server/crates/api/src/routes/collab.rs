@@ -2,9 +2,10 @@ use axum::extract::{Path, State};
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use epistemic_core::domain::{
-    Annotation, AnnotationKind, ReadingLevel, ReadingStatusRow, Visibility,
+    Annotation, AnnotationKind, CommentKind, NodeComment, ReadingLevel, ReadingStatusRow,
+    Visibility,
 };
-use epistemic_core::repo::{annotations, reading};
+use epistemic_core::repo::{annotations, comments, groups, reading};
 use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -21,6 +22,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/works/{id}/annotations",
             get(list_annotations).post(create_annotation),
+        )
+        .route(
+            "/graphs/{graph_id}/works/{work_id}/comments",
+            get(list_node_comments).post(create_node_comment),
+        )
+        .route(
+            "/comments/{id}",
+            axum::routing::patch(update_node_comment).delete(delete_node_comment),
         )
 }
 
@@ -90,4 +99,88 @@ async fn list_annotations(
     Ok(Json(
         annotations::list_for_work(&state.pool, id, user.id).await?,
     ))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct NodeCommentReq {
+    pub body: String,
+    pub kind: Option<CommentKind>,
+    pub visibility: Option<Visibility>,
+    pub parent_id: Option<Uuid>,
+}
+
+async fn list_node_comments(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path((graph_id, work_id)): Path<(Uuid, Uuid)>,
+) -> ApiResult<Json<Vec<NodeComment>>> {
+    groups::require_graph_access(&state.pool, graph_id, user.id).await?;
+    Ok(Json(
+        comments::list_for_node(&state.pool, graph_id, work_id, user.id).await?,
+    ))
+}
+
+async fn create_node_comment(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path((graph_id, work_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<NodeCommentReq>,
+) -> ApiResult<Json<NodeComment>> {
+    groups::require_graph_access(&state.pool, graph_id, user.id).await?;
+    Ok(Json(
+        comments::create(
+            &state.pool,
+            comments::NewNodeComment {
+                graph_id,
+                work_id,
+                user_id: user.id,
+                kind: body.kind.unwrap_or(CommentKind::Comment),
+                visibility: body.visibility.unwrap_or(Visibility::Team),
+                body: body.body,
+                parent_id: body.parent_id,
+            },
+        )
+        .await?,
+    ))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct NodeCommentPatchReq {
+    pub body: Option<String>,
+    pub kind: Option<CommentKind>,
+    pub visibility: Option<Visibility>,
+}
+
+async fn update_node_comment(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<NodeCommentPatchReq>,
+) -> ApiResult<Json<NodeComment>> {
+    let existing = comments::get(&state.pool, id).await?;
+    groups::require_graph_access(&state.pool, existing.graph_id, user.id).await?;
+    Ok(Json(
+        comments::update(
+            &state.pool,
+            id,
+            user.id,
+            comments::NodeCommentPatch {
+                body: body.body,
+                kind: body.kind,
+                visibility: body.visibility,
+            },
+        )
+        .await?,
+    ))
+}
+
+async fn delete_node_comment(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let existing = comments::get(&state.pool, id).await?;
+    groups::require_graph_access(&state.pool, existing.graph_id, user.id).await?;
+    comments::delete(&state.pool, id, user.id).await?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

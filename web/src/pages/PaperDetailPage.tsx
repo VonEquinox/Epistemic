@@ -7,6 +7,7 @@ import {
   useWork,
 } from '../api/hooks';
 import { PaperCard } from '../components/PaperCard';
+import { NodeComments } from '../components/NodeComments';
 import { PdfViewer, type PdfViewerHandle } from '../pdf';
 import type { Annotation, EvidenceSpan } from '../api/types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -25,6 +26,7 @@ const VIS_LABEL: Record<string, string> = {
 export function PaperDetailPage() {
   const { id } = useParams();
   const [sp] = useSearchParams();
+  const graphId = sp.get('graph');
   const { data, isLoading, error } = useWork(id);
   const { data: anns } = useAnnotations(id);
   const pdfRef = useRef<PdfViewerHandle>(null);
@@ -114,9 +116,11 @@ export function PaperDetailPage() {
           }}
         />
 
+        <NodeComments graphId={graphId} workId={data.work.id} />
+
         <section className="mt-6 space-y-3">
           <h2 className="font-medium text-ink-800 text-sm">
-            全部批注{anns ? ` (${anns.length})` : ''}
+            PDF 批注{anns ? ` (${anns.length})` : ''}
           </h2>
           {roots.length === 0 && (
             <p className="text-xs text-ink-400">

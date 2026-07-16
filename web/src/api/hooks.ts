@@ -3,6 +3,7 @@ import { api } from './client';
 import type {
   Annotation,
   AnnotationKind,
+  CommentKind,
   ClaimJudgment,
   ClaimVerdict,
   EgoResponse,
@@ -13,6 +14,7 @@ import type {
   Invite,
   Job,
   MapResponse,
+  NodeComment,
   Project,
   ReadingLevel,
   RelationDetail,
@@ -308,6 +310,58 @@ export function useCreateAnnotation(workId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['annotations', workId] });
       qc.invalidateQueries({ queryKey: ['work', workId] });
+    },
+  });
+}
+
+export function useNodeComments(graphId: string | null | undefined, workId: string | undefined) {
+  return useQuery({
+    queryKey: ['node-comments', graphId, workId],
+    queryFn: () =>
+      api.get<NodeComment[]>(`/graphs/${graphId}/works/${workId}/comments`),
+    enabled: !!graphId && !!workId,
+  });
+}
+
+export function useCreateNodeComment(graphId: string | null | undefined, workId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      body: string;
+      kind?: CommentKind;
+      visibility?: Visibility;
+      parent_id?: string | null;
+    }) => api.post<NodeComment>(`/graphs/${graphId}/works/${workId}/comments`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['node-comments', graphId, workId] });
+    },
+  });
+}
+
+export function useUpdateNodeComment(graphId: string | null | undefined, workId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: string;
+      body?: string;
+      kind?: CommentKind;
+      visibility?: Visibility;
+    }) => api.patch<NodeComment>(`/comments/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['node-comments', graphId, workId] });
+    },
+  });
+}
+
+export function useDeleteNodeComment(graphId: string | null | undefined, workId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete<{ ok: boolean }>(`/comments/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['node-comments', graphId, workId] });
     },
   });
 }

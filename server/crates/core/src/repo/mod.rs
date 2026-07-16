@@ -1,6 +1,7 @@
 pub mod annotations;
 pub mod aspects;
 pub mod claims;
+pub mod comments;
 pub mod evidence;
 pub mod graph;
 pub mod groups;
