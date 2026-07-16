@@ -63,10 +63,16 @@ export function aspectNeighborMap(
   return out;
 }
 
-/** Spring length from combined score. Lmin=80, Lmax=420 */
-export function springLength(score: number, lmin = 80, lmax = 420): number {
+/**
+ * Spring length from combined score.
+ * High similarity → shorter spring; weak pairs stay far apart so the map breathes.
+ * Defaults tuned for ~80-node aspect maps (Lmin=160, Lmax=720).
+ */
+export function springLength(score: number, lmin = 160, lmax = 720): number {
   const s = Math.max(0, Math.min(1, score));
-  return lmin + (lmax - lmin) * (1 - s);
+  // Square falloff: mid scores still get fairly long springs.
+  const t = (1 - s) * (1 - s);
+  return lmin + (lmax - lmin) * t;
 }
 
 /** Deterministic seed position from work id hash */

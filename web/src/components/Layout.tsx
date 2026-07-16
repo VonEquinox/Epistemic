@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useLogout, useMe } from '../api/hooks';
 
 const nav = [
+  { to: '/groups', label: '研究组' },
   { to: '/map', label: '地图' },
   { to: '/papers', label: '论文' },
   { to: '/review', label: '审核队列' },
@@ -18,7 +19,7 @@ export function Layout() {
     <div className="h-full flex flex-col">
       <header className="border-b border-ink-200 bg-white">
         <div className="max-w-[1400px] mx-auto px-4 h-12 flex items-center gap-6">
-          <Link to="/map" className="font-semibold tracking-tight text-ink-950">
+          <Link to="/groups" className="font-semibold tracking-tight text-ink-950">
             Epistemic
           </Link>
           <nav className="flex gap-1 text-sm">

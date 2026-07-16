@@ -6,6 +6,9 @@ import type {
   ClaimJudgment,
   ClaimVerdict,
   EgoResponse,
+  Graph,
+  GraphWithMeta,
+  GroupMemberPublic,
   ImportBatch,
   Invite,
   Job,
@@ -13,6 +16,8 @@ import type {
   Project,
   ReadingLevel,
   RelationDetail,
+  ResearchGroup,
+  ResearchGroupWithMeta,
   User,
   Visibility,
   WorkCard,
@@ -80,10 +85,11 @@ export function useQuickAdd() {
   });
 }
 
-export function useMap() {
+export function useMap(graphId?: string | null) {
+  const q = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : '';
   return useQuery({
-    queryKey: ['graph', 'map'],
-    queryFn: () => api.get<MapResponse>('/graph/map'),
+    queryKey: ['graph', 'map', graphId ?? 'global'],
+    queryFn: () => api.get<MapResponse>(`/graph/map${q}`),
   });
 }
 
@@ -330,6 +336,98 @@ export function useProjectCoverage(id: string | undefined) {
         `/projects/${id}/coverage`,
       ),
     enabled: !!id,
+  });
+}
+
+// ─── Groups + Graphs ─────────────────────────────────────────────────────────
+
+export function useGroups() {
+  return useQuery({
+    queryKey: ['groups'],
+    queryFn: () => api.get<ResearchGroupWithMeta[]>('/groups'),
+  });
+}
+
+export function useCreateGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; description?: string }) =>
+      api.post<ResearchGroup>('/groups', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups'] }),
+  });
+}
+
+export function useGroup(id: string | undefined) {
+  return useQuery({
+    queryKey: ['groups', id],
+    queryFn: () => api.get<ResearchGroupWithMeta>(`/groups/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useGroupGraphs(groupId: string | undefined) {
+  return useQuery({
+    queryKey: ['groups', groupId, 'graphs'],
+    queryFn: () => api.get<GraphWithMeta[]>(`/groups/${groupId}/graphs`),
+    enabled: !!groupId,
+  });
+}
+
+export function useCreateGraph(groupId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; description?: string }) =>
+      api.post<Graph>(`/groups/${groupId}/graphs`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'graphs'] });
+      qc.invalidateQueries({ queryKey: ['groups'] });
+    },
+  });
+}
+
+export function useGraph(graphId: string | undefined) {
+  return useQuery({
+    queryKey: ['graphs', graphId],
+    queryFn: () => api.get<GraphWithMeta>(`/groups/graphs/${graphId}`),
+    enabled: !!graphId,
+  });
+}
+
+export function useGroupMembers(groupId: string | undefined) {
+  return useQuery({
+    queryKey: ['groups', groupId, 'members'],
+    queryFn: () => api.get<GroupMemberPublic[]>(`/groups/${groupId}/members`),
+    enabled: !!groupId,
+  });
+}
+
+export function useImportLibraryToGraph(graphId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; added: number }>(
+        `/groups/graphs/${graphId}/import-library`,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['graphs', graphId] });
+      qc.invalidateQueries({ queryKey: ['graph', 'map', graphId] });
+      qc.invalidateQueries({ queryKey: ['groups'] });
+    },
+  });
+}
+
+export function useAddWorksToGraph(graphId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (work_ids: string[]) =>
+      api.post<{ ok: boolean; added: number }>(
+        `/groups/graphs/${graphId}/works`,
+        { work_ids },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['graphs', graphId] });
+      qc.invalidateQueries({ queryKey: ['graph', 'map', graphId] });
+    },
   });
 }
 

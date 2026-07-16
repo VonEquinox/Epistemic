@@ -22,7 +22,17 @@ export function aspectByKey(key: string): AspectDef | undefined {
   return ASPECTS.find((a) => a.key === key);
 }
 
-/** Display top-K similarity edges on the map (data stores top-32). */
-export const ASPECT_EDGE_TOP_K = 8;
-/** Hide weak similarity edges below this score. */
-export const ASPECT_EDGE_MIN_SCORE = 0.45;
+/** Neighbors kept for *visible* similarity edges (data stores top-32). */
+export const ASPECT_EDGE_TOP_K = 12;
+/**
+ * Floor when building display edges. Live minSimScore slider filters further.
+ */
+export const ASPECT_EDGE_BUILD_MIN = 0.28;
+/** Default for the min-similarity slider. */
+export const ASPECT_EDGE_MIN_SCORE = 0.5;
+/**
+ * Sparser top-K used only as fcose springs so the map spreads out.
+ * Display edges can be denser without collapsing the layout.
+ */
+export const ASPECT_LAYOUT_TOP_K = 4;
+export const ASPECT_LAYOUT_MIN_SCORE = 0.4;

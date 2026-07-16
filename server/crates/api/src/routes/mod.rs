@@ -10,6 +10,7 @@ pub mod evidence;
 pub mod claims;
 pub mod views;
 pub mod jobs_admin;
+pub mod groups;
 
 use axum::routing::get;
 use axum::Router;
@@ -20,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .nest("/auth", auth::router())
         .nest("/works", works::router())
         .nest("/projects", projects::router())
+        .nest("/groups", groups::router())
         .nest("/imports", imports::router())
         .nest("/relations", relations::router())
         .nest("/evidence", evidence::router())

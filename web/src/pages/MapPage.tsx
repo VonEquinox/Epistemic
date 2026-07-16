@@ -1,8 +1,11 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useCreateSavedView,
   useDeleteSavedView,
+  useGraph,
+  useGroup,
+  useGroups,
   useMap,
   useSavedViews,
 } from '../api/hooks';
@@ -12,7 +15,28 @@ import { Drawer } from '../components/Drawer';
 import { useUiStore } from '../stores/ui';
 
 export function MapPage() {
-  const { data, isLoading, error } = useMap();
+  const [params, setParams] = useSearchParams();
+  const graphIdFromUrl = params.get('graph');
+  const groupIdFromUrl = params.get('group');
+
+  const setActiveGroupId = useUiStore((s) => s.setActiveGroupId);
+  const setActiveGraphId = useUiStore((s) => s.setActiveGraphId);
+  const activeGraphId = useUiStore((s) => s.activeGraphId);
+  const activeGroupId = useUiStore((s) => s.activeGroupId);
+
+  const graphId = graphIdFromUrl ?? activeGraphId;
+  const groupId = groupIdFromUrl ?? activeGroupId;
+
+  useEffect(() => {
+    if (graphIdFromUrl) setActiveGraphId(graphIdFromUrl);
+    if (groupIdFromUrl) setActiveGroupId(groupIdFromUrl);
+  }, [graphIdFromUrl, groupIdFromUrl, setActiveGraphId, setActiveGroupId]);
+
+  const { data: groups } = useGroups();
+  const { data: groupMeta } = useGroup(groupId ?? undefined);
+  const { data: graphMeta } = useGraph(graphId ?? undefined);
+
+  const { data, isLoading, error } = useMap(graphId);
   const selectWork = useUiStore((s) => s.selectWork);
   const weights = useUiStore((s) => s.weights);
   const setWeights = useUiStore((s) => s.setWeights);
@@ -22,6 +46,8 @@ export function MapPage() {
   const setActiveAspect = useUiStore((s) => s.setActiveAspect);
   const showAssertionEdges = useUiStore((s) => s.showAssertionEdges);
   const setShowAssertionEdges = useUiStore((s) => s.setShowAssertionEdges);
+  const minSimScore = useUiStore((s) => s.minSimScore);
+  const setMinSimScore = useUiStore((s) => s.setMinSimScore);
   const lod = useUiStore((s) => s.lod);
   const nav = useNavigate();
   const [viewName, setViewName] = useState('');
@@ -30,12 +56,50 @@ export function MapPage() {
   const createView = useCreateSavedView();
   const deleteView = useDeleteSavedView();
 
+  const scopeLabel = graphMeta
+    ? `${groupMeta?.name ?? '组'} / ${graphMeta.name}`
+    : graphId
+      ? '图'
+      : '全库地图';
+
   return (
     <div className="h-full relative flex flex-col">
       <div className="border-b border-ink-100 bg-white px-4 py-2 flex flex-col gap-2 text-xs text-ink-600">
         <div className="flex items-center gap-3 flex-wrap">
-          <span className="font-medium text-ink-800">全局语义地图</span>
+          <span className="font-medium text-ink-800">地图</span>
+          <span className="text-ink-500 truncate max-w-[14rem]" title={scopeLabel}>
+            {scopeLabel}
+          </span>
           <span className="text-ink-400">LOD: {lod}</span>
+          {data && (
+            <span className="text-ink-400">{data.nodes.length} 节点</span>
+          )}
+
+          <Link to="/groups" className="text-accent hover:underline">
+            切换组/图
+          </Link>
+          {graphId && (
+            <button
+              type="button"
+              className="text-ink-400 hover:underline"
+              onClick={() => {
+                setActiveGraphId(null);
+                setParams({});
+              }}
+            >
+              看全库
+            </button>
+          )}
+
+          {!graphId && groups && groups.length > 0 && (
+            <span className="text-amber-700">
+              当前为全库；可从
+              <Link to="/groups" className="underline ml-0.5">
+                研究组
+              </Link>
+              打开某张图
+            </span>
+          )}
 
           <div className="flex items-center gap-1 flex-wrap">
             <span className="text-ink-500 shrink-0">分析层</span>
@@ -79,6 +143,27 @@ export function MapPage() {
             断言边
           </label>
 
+          {activeAspect && (
+            <label
+              className="flex items-center gap-2 ml-1 border-l border-ink-100 pl-3"
+              title="只显示余弦相似度 ≥ 阈值的边。分数越高越相关/越近。"
+            >
+              <span className="text-ink-500 shrink-0">相关度 ≥</span>
+              <input
+                type="range"
+                min={0.25}
+                max={0.9}
+                step={0.01}
+                value={minSimScore}
+                onChange={(e) => setMinSimScore(Number(e.target.value))}
+                className="w-28 accent-ink-800"
+              />
+              <span className="tabular-nums font-medium text-ink-800 w-10">
+                {minSimScore.toFixed(2)}
+              </span>
+            </label>
+          )}
+
           <button
             type="button"
             className="text-ink-400 hover:underline"
@@ -89,7 +174,7 @@ export function MapPage() {
 
           <span className="ml-auto text-ink-400">
             {activeAspect
-              ? '当前层：相似边 = 该层向量 top-K · 悬停显示分数'
+              ? '相似边实时按相关度过滤 · 悬停显示分数'
               : '综合布局 · 相似不画边 · 近景可开断言边'}
           </span>
         </div>

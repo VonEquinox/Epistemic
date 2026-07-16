@@ -55,26 +55,52 @@ struct MapNodeRow {
     has_dispute: Option<bool>,
 }
 
-pub async fn map_data(pool: &PgPool) -> AppResult<MapResponse> {
-    let nodes_raw = sqlx::query_as::<_, MapNodeRow>(
-        r#"
-        SELECT w.id, w.created_at,
-               COALESCE(v.title, w.title_norm) AS title,
-               v.year AS year,
-               (SELECT COUNT(*) FROM reading_status rs
-                WHERE rs.work_id = w.id AND rs.status <> 'unread') AS readers,
-               EXISTS(
-                   SELECT 1 FROM relation_members rm
-                   JOIN relations r ON r.id = rm.relation_id
-                   WHERE rm.anchor_work_id = w.id AND r.review_status = 'disputed'
-               ) AS has_dispute
-        FROM works w
-        LEFT JOIN versions v ON v.id = w.primary_version_id
-        ORDER BY w.created_at
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
+/// Full-library map (`graph_id = None`) or a single graph workspace filter.
+pub async fn map_data(pool: &PgPool, graph_id: Option<Uuid>) -> AppResult<MapResponse> {
+    let nodes_raw = if let Some(gid) = graph_id {
+        sqlx::query_as::<_, MapNodeRow>(
+            r#"
+            SELECT w.id, w.created_at,
+                   COALESCE(v.title, w.title_norm) AS title,
+                   v.year AS year,
+                   (SELECT COUNT(*) FROM reading_status rs
+                    WHERE rs.work_id = w.id AND rs.status <> 'unread') AS readers,
+                   EXISTS(
+                       SELECT 1 FROM relation_members rm
+                       JOIN relations r ON r.id = rm.relation_id
+                       WHERE rm.anchor_work_id = w.id AND r.review_status = 'disputed'
+                   ) AS has_dispute
+            FROM graph_works gw
+            JOIN works w ON w.id = gw.work_id
+            LEFT JOIN versions v ON v.id = w.primary_version_id
+            WHERE gw.graph_id = $1
+            ORDER BY w.created_at
+            "#,
+        )
+        .bind(gid)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, MapNodeRow>(
+            r#"
+            SELECT w.id, w.created_at,
+                   COALESCE(v.title, w.title_norm) AS title,
+                   v.year AS year,
+                   (SELECT COUNT(*) FROM reading_status rs
+                    WHERE rs.work_id = w.id AND rs.status <> 'unread') AS readers,
+                   EXISTS(
+                       SELECT 1 FROM relation_members rm
+                       JOIN relations r ON r.id = rm.relation_id
+                       WHERE rm.anchor_work_id = w.id AND r.review_status = 'disputed'
+                   ) AS has_dispute
+            FROM works w
+            LEFT JOIN versions v ON v.id = w.primary_version_id
+            ORDER BY w.created_at
+            "#,
+        )
+        .fetch_all(pool)
+        .await?
+    };
 
     let nodes: Vec<MapNode> = nodes_raw
         .into_iter()
@@ -88,15 +114,32 @@ pub async fn map_data(pool: &PgPool) -> AppResult<MapResponse> {
         })
         .collect();
 
-    let neighbor_rows = sqlx::query_as::<_, Neighbor>(
-        r#"
-        SELECT dimension, work_id, neighbor_work_id, score
-        FROM neighbors
-        ORDER BY dimension, work_id, score DESC
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
+    let node_ids: std::collections::HashSet<Uuid> = nodes.iter().map(|n| n.work_id).collect();
+
+    let neighbor_rows = if let Some(gid) = graph_id {
+        sqlx::query_as::<_, Neighbor>(
+            r#"
+            SELECT n.dimension, n.work_id, n.neighbor_work_id, n.score
+            FROM neighbors n
+            WHERE n.work_id IN (SELECT work_id FROM graph_works WHERE graph_id = $1)
+              AND n.neighbor_work_id IN (SELECT work_id FROM graph_works WHERE graph_id = $1)
+            ORDER BY n.dimension, n.work_id, n.score DESC
+            "#,
+        )
+        .bind(gid)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, Neighbor>(
+            r#"
+            SELECT dimension, work_id, neighbor_work_id, score
+            FROM neighbors
+            ORDER BY dimension, work_id, score DESC
+            "#,
+        )
+        .fetch_all(pool)
+        .await?
+    };
 
     let mut neighbors: std::collections::HashMap<
         String,
@@ -167,6 +210,14 @@ pub async fn map_data(pool: &PgPool) -> AppResult<MapResponse> {
     let edges: Vec<MapEdge> = edge_rows
         .into_iter()
         .filter(|e| e.source_work_id != e.target_work_id)
+        .filter(|e| {
+            // When scoped to a graph, both ends must be in the graph.
+            if graph_id.is_some() {
+                node_ids.contains(&e.source_work_id) && node_ids.contains(&e.target_work_id)
+            } else {
+                true
+            }
+        })
         .map(|e| MapEdge {
             relation_id: e.relation_id,
             source_work_id: e.source_work_id,

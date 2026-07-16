@@ -287,6 +287,44 @@ export interface Project {
   created_at: string;
 }
 
+export type GroupRole = 'owner' | 'admin' | 'member';
+
+export interface ResearchGroup {
+  id: string;
+  name: string;
+  description: string;
+  created_by?: string | null;
+  created_at: string;
+}
+
+/** Group row with membership meta (GET /groups). */
+export interface ResearchGroupWithMeta extends ResearchGroup {
+  my_role: GroupRole;
+  member_count: number;
+  graph_count: number;
+}
+
+export interface Graph {
+  id: string;
+  group_id: string;
+  name: string;
+  description: string;
+  created_by?: string | null;
+  created_at: string;
+}
+
+export interface GraphWithMeta extends Graph {
+  work_count: number;
+}
+
+export interface GroupMemberPublic {
+  user_id: string;
+  email: string;
+  name: string;
+  role: GroupRole;
+  joined_at: string;
+}
+
 export interface ImportBatch {
   id: string;
   raw_input: string;

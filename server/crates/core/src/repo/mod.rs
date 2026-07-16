@@ -11,6 +11,7 @@ pub mod evidence;
 pub mod claims;
 pub mod views;
 pub mod aspects;
+pub mod groups;
 
 // Explicit re-exports to avoid name clashes (get / list_for_work).
 pub use users::{

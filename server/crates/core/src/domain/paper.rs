@@ -55,6 +55,51 @@ pub struct Project {
     pub created_at: DateTime<Utc>,
 }
 
+/// Collaboration group (team). Users join via group_members.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct ResearchGroup {
+    pub id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct GroupMember {
+    pub group_id: Uuid,
+    pub user_id: Uuid,
+    pub role: super::GroupRole,
+    pub joined_at: DateTime<Utc>,
+}
+
+/// A map workspace under a group (set of works + collab scope).
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct Graph {
+    pub id: Uuid,
+    pub group_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ResearchGroupWithMeta {
+    #[serde(flatten)]
+    pub group: ResearchGroup,
+    pub my_role: super::GroupRole,
+    pub member_count: i64,
+    pub graph_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct GraphWithMeta {
+    #[serde(flatten)]
+    pub graph: Graph,
+    pub work_count: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct Work {
     pub id: Uuid,

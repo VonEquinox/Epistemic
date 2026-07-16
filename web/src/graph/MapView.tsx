@@ -16,8 +16,10 @@ import {
   bundleEdges,
 } from './layout';
 import {
-  ASPECT_EDGE_MIN_SCORE,
+  ASPECT_EDGE_BUILD_MIN,
   ASPECT_EDGE_TOP_K,
+  ASPECT_LAYOUT_MIN_SCORE,
+  ASPECT_LAYOUT_TOP_K,
   aspectByKey,
 } from './aspects';
 
@@ -46,24 +48,55 @@ function visibleMapEdges(edges: MapEdge[] | undefined, showCandidates: boolean):
   });
 }
 
-function buildScoreMap(
+function aspectDim(activeAspect: string): string {
+  return aspectByKey(activeAspect)?.dimension ?? `aspect_${activeAspect}`;
+}
+
+/** Dense map for drawn edges (filtered live by minSimScore). */
+function buildDisplayScoreMap(
   data: MapResponse,
   activeAspect: string | null,
   weights: { citation_coupling: number; method_lineage: number; topic: number },
   topicEnabled: boolean,
 ): Map<string, Map<string, number>> {
   if (activeAspect) {
-    const def = aspectByKey(activeAspect);
-    const dim = def?.dimension ?? `aspect_${activeAspect}`;
     return aspectNeighborMap(
       data.neighbors,
-      dim,
+      aspectDim(activeAspect),
       ASPECT_EDGE_TOP_K,
-      ASPECT_EDGE_MIN_SCORE,
+      ASPECT_EDGE_BUILD_MIN,
     );
   }
   return combineNeighbors(data.neighbors, weights, topicEnabled);
 }
+
+/** Sparse strong springs only — keeps the graph from collapsing into a ball. */
+function buildLayoutScoreMap(
+  data: MapResponse,
+  activeAspect: string | null,
+  weights: { citation_coupling: number; method_lineage: number; topic: number },
+  topicEnabled: boolean,
+): Map<string, Map<string, number>> {
+  if (activeAspect) {
+    return aspectNeighborMap(
+      data.neighbors,
+      aspectDim(activeAspect),
+      ASPECT_LAYOUT_TOP_K,
+      ASPECT_LAYOUT_MIN_SCORE,
+    );
+  }
+  return combineNeighbors(data.neighbors, weights, topicEnabled);
+}
+
+const FCOSE_SPREAD = {
+  nodeRepulsion: () => 72000,
+  nodeSeparation: 220,
+  gravity: 0.06,
+  gravityRange: 5.5,
+  numIter: 4000,
+  packing: 'true' as const,
+  idealDefault: 320,
+};
 
 export function MapView({
   data,
@@ -78,32 +111,58 @@ export function MapView({
   const topicEnabled = useUiStore((s) => s.topicEnabled);
   const activeAspect = useUiStore((s) => s.activeAspect);
   const showAssertionEdges = useUiStore((s) => s.showAssertionEdges);
+  const minSimScore = useUiStore((s) => s.minSimScore);
   const setLod = useUiStore((s) => s.setLod);
   const assertionEdges = visibleMapEdges(
     data.edges,
     showCandidates || showAssertionEdges,
   );
 
+  /** Show only similarity edges whose score ≥ threshold (no relayout). */
+  const applySimThreshold = (cy: Core, threshold: number, draw: boolean) => {
+    cy.batch(() => {
+      cy.edges('.similarity').forEach((e) => {
+        const score = Number(e.data('score') ?? 0);
+        const show = draw && score >= threshold;
+        e.style('display', show ? 'element' : 'none');
+      });
+    });
+  };
+
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const scoreMap = buildScoreMap(data, activeAspect, weights, topicEnabled);
-    const unconnected = unconnectedNodes(data.nodes, scoreMap);
+    const displayMap = buildDisplayScoreMap(
+      data,
+      activeAspect,
+      weights,
+      topicEnabled,
+    );
+    const layoutMap = buildLayoutScoreMap(
+      data,
+      activeAspect,
+      weights,
+      topicEnabled,
+    );
+    // Park only if a node has no display-level neighbors at all.
+    const unconnected = unconnectedNodes(data.nodes, displayMap);
     const drawSimilarity = !!activeAspect;
 
     const elements: cytoscape.ElementDefinition[] = [];
     let parkIdx = 0;
     const PARK_COLS = 4;
-    const PARK_X0 = 640;
-    const PARK_STEP = 150;
+    const PARK_X0 = 980;
+    const PARK_STEP = 200;
     data.nodes.forEach((n) => {
       const pos = seedPosition(n.work_id);
+      // Slightly wider seed scatter so fcose starts less bunched.
+      const jittered = { x: pos.x * 1.6, y: pos.y * 1.6 };
       const locked = unconnected.has(n.work_id);
-      let position = pos;
+      let position = jittered;
       if (locked) {
         const col = parkIdx % PARK_COLS;
         const row = Math.floor(parkIdx / PARK_COLS);
-        position = { x: PARK_X0 + col * PARK_STEP, y: -320 + row * 60 };
+        position = { x: PARK_X0 + col * PARK_STEP, y: -420 + row * 90 };
         parkIdx += 1;
       }
       elements.push({
@@ -120,21 +179,44 @@ export function MapView({
       });
     });
 
-    // Similarity / spring edges from active aspect (or combined weights).
+    // Only sparse layout springs go into the graph *before* fcose —
+    // denser visual edges are added after layout so they don't collapse spacing.
+    const springSet = new Set<string>();
+    for (const [src, m] of layoutMap) {
+      for (const [tgt, score] of m) {
+        const key = [src, tgt].sort().join('|');
+        if (springSet.has(key)) continue;
+        springSet.add(key);
+        elements.push({
+          data: {
+            id: `spring-${activeAspect ?? 'mix'}-${key}`,
+            source: src,
+            target: tgt,
+            weight: score,
+            score,
+            idealEdgeLength: springLength(score),
+            type: 'layout_spring',
+          },
+          classes: 'layout-spring',
+        });
+      }
+    }
+
+    // Precompute visual edges to add after layout.
+    const visualEdges: cytoscape.ElementDefinition[] = [];
     const edgeSet = new Set<string>();
-    for (const [src, m] of scoreMap) {
+    for (const [src, m] of displayMap) {
       for (const [tgt, score] of m) {
         const key = [src, tgt].sort().join('|');
         if (edgeSet.has(key)) continue;
         edgeSet.add(key);
-        elements.push({
+        visualEdges.push({
           data: {
             id: `sim-${activeAspect ?? 'mix'}-${key}`,
             source: src,
             target: tgt,
             weight: score,
             score,
-            idealEdgeLength: springLength(score),
             type: 'similarity',
             label: score.toFixed(2),
           },
@@ -143,7 +225,6 @@ export function MapView({
       }
     }
 
-    // Assertion edges (optional overlay)
     if (showAssertionEdges) {
       const bundles = bundleEdges(
         assertionEdges.map((e) => ({
@@ -159,7 +240,7 @@ export function MapView({
         })),
       );
       for (const b of bundles) {
-        elements.push({
+        visualEdges.push({
           data: {
             id: `bundle-${b.key}`,
             source: b.source_id,
@@ -197,14 +278,26 @@ export function MapView({
           },
         },
         {
+          // Invisible layout-only springs (never drawn).
+          selector: 'edge.layout-spring',
+          style: {
+            display: 'none',
+            'curve-style': 'haystack',
+            width: 1,
+            opacity: 0,
+          },
+        },
+        {
           selector: 'edge.similarity',
           style: {
-            display: drawSimilarity ? 'element' : 'none',
-            'curve-style': 'haystack',
-            'haystack-radius': 0.4,
-            width: 1.2,
+            display: 'none', // applySimThreshold turns visible ones on
+            // Bezier + control points reduce edge-on-node stacking vs haystack.
+            'curve-style': 'unbundled-bezier',
+            'control-point-distances': 28,
+            'control-point-weights': 0.5,
+            width: 1.1,
             'line-color': '#94a3b8',
-            'line-opacity': 0.35,
+            'line-opacity': 0.32,
             'target-arrow-shape': 'none',
             'line-style': 'solid',
             label: '',
@@ -247,20 +340,37 @@ export function MapView({
         randomize: false,
         quality: 'proof',
         idealEdgeLength: (edge: cytoscape.EdgeSingular) =>
-          edge.data('idealEdgeLength') ?? 200,
-        nodeRepulsion: () => 24000,
-        nodeSeparation: 120,
-        gravity: 0.15,
-        gravityRange: 4.0,
-        numIter: 3000,
-        packing: 'true',
+          edge.data('idealEdgeLength') ?? FCOSE_SPREAD.idealDefault,
+        nodeRepulsion: FCOSE_SPREAD.nodeRepulsion,
+        nodeSeparation: FCOSE_SPREAD.nodeSeparation,
+        gravity: FCOSE_SPREAD.gravity,
+        gravityRange: FCOSE_SPREAD.gravityRange,
+        numIter: FCOSE_SPREAD.numIter,
+        packing: FCOSE_SPREAD.packing,
       } as cytoscape.LayoutOptions,
-      minZoom: 0.2,
+      minZoom: 0.15,
       maxZoom: 3,
       wheelSensitivity: 0.3,
       textureOnViewport: true,
       hideEdgesOnViewport: true,
     });
+
+    // Add denser visual edges *after* fcose so they don't act as springs.
+    if (visualEdges.length > 0) {
+      cy.add(visualEdges);
+      // Slightly different bezier bows so parallel edges don't sit on one ray.
+      cy.edges('.similarity').forEach((e) => {
+        let h = 0;
+        const id = e.id();
+        for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+        const dist = 18 + Math.abs(h % 55);
+        const sign = h & 1 ? 1 : -1;
+        e.style({
+          'control-point-distances': sign * dist,
+          'control-point-weights': 0.35 + (Math.abs(h >> 3) % 30) / 100,
+        });
+      });
+    }
 
     const applyLod = (zoom: number) => {
       const lod = lodFromZoom(zoom);
@@ -270,7 +380,9 @@ export function MapView({
           cy.nodes().style('label', '');
           cy.edges('.assertion').style('display', 'none');
           if (drawSimilarity) {
-            cy.edges('.similarity').style('line-opacity', 0.15);
+            cy.edges('.similarity').forEach((e) => {
+              if (e.style('display') === 'element') e.style('line-opacity', 0.15);
+            });
           }
         } else if (lod === 'mid') {
           cy.nodes().forEach((n) => {
@@ -278,7 +390,9 @@ export function MapView({
           });
           cy.edges('.assertion').style('display', 'none');
           if (drawSimilarity) {
-            cy.edges('.similarity').style('line-opacity', 0.35);
+            cy.edges('.similarity').forEach((e) => {
+              if (e.style('display') === 'element') e.style('line-opacity', 0.35);
+            });
           }
         } else {
           cy.nodes().forEach((n) => {
@@ -288,7 +402,9 @@ export function MapView({
             cy.edges('.assertion').style('display', 'element');
           }
           if (drawSimilarity) {
-            cy.edges('.similarity').style('line-opacity', 0.45);
+            cy.edges('.similarity').forEach((e) => {
+              if (e.style('display') === 'element') e.style('line-opacity', 0.45);
+            });
           }
         }
       });
@@ -334,6 +450,7 @@ export function MapView({
       applyLod(cy.zoom());
     });
     cy.on('zoom', () => applyLod(cy.zoom()));
+    applySimThreshold(cy, minSimScore, drawSimilarity);
     applyLod(cy.zoom());
 
     cyRef.current = cy;
@@ -341,9 +458,16 @@ export function MapView({
       cy.destroy();
       cyRef.current = null;
     };
-    // Re-init when data / aspect / assertion overlay changes
+    // Re-init when data / aspect / assertion overlay changes (not minSimScore).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, activeAspect, showAssertionEdges, showCandidates]);
+
+  // Live filter: only toggle edge display when the similarity threshold moves.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    applySimThreshold(cy, minSimScore, !!activeAspect);
+  }, [minSimScore, activeAspect]);
 
   // Re-layout on weight change without full remount (legacy mode only)
   useEffect(() => {
@@ -363,13 +487,23 @@ export function MapView({
     cy.layout({
       name: 'fcose',
       animate: true,
-      animationDuration: 400,
+      animationDuration: 500,
       randomize: false,
-      idealEdgeLength: (edge: cytoscape.EdgeSingular) =>
-        edge.data('idealEdgeLength') ?? 200,
-      nodeRepulsion: () => 24000,
-      nodeSeparation: 120,
-      gravity: 0.15,
+      // Only layout-spring edges exist as pullers in the graph; visual edges
+      // are display-only (added after initial layout). If any remain, give
+      // them huge ideal length so they don't collapse clusters.
+      idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
+        if (edge.hasClass('layout-spring')) {
+          return edge.data('idealEdgeLength') ?? FCOSE_SPREAD.idealDefault;
+        }
+        return 1200;
+      },
+      nodeRepulsion: FCOSE_SPREAD.nodeRepulsion,
+      nodeSeparation: FCOSE_SPREAD.nodeSeparation,
+      gravity: FCOSE_SPREAD.gravity,
+      gravityRange: FCOSE_SPREAD.gravityRange,
+      numIter: FCOSE_SPREAD.numIter,
+      packing: FCOSE_SPREAD.packing,
     } as cytoscape.LayoutOptions).run();
   }, [weights, topicEnabled, data.neighbors, activeAspect]);
 
