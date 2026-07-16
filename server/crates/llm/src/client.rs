@@ -1,4 +1,5 @@
 use crate::types::*;
+use base64::Engine;
 use reqwest::Client;
 use std::time::Duration;
 use thiserror::Error;
@@ -17,8 +18,9 @@ pub enum LlmError {
 
 /// OpenAI-compatible Chat Completions client (`/v1/chat/completions`).
 ///
-/// Works with OpenAI, Azure OpenAI-compatible gateways, vLLM, OpenRouter, etc.
-/// Env: `OPENAI_API_KEY` (or `LLM_API_KEY`), optional `OPENAI_BASE_URL` / `OPENAI_MODEL`.
+/// Supports multimodal `image_url` parts for VLMs.
+/// Env: `OPENAI_API_KEY` (or `LLM_API_KEY`), optional `OPENAI_BASE_URL` / `OPENAI_MODEL`,
+/// `LLM_TIMEOUT_SECS` (default 1800 for full-PDF vision).
 #[derive(Clone)]
 pub struct LlmClient {
     http: Client,
@@ -34,8 +36,12 @@ impl LlmClient {
         default_model: impl Into<String>,
         base_url: impl Into<String>,
     ) -> Self {
+        let timeout_secs: u64 = std::env::var("LLM_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1800);
         let http = Client::builder()
-            .timeout(Duration::from_secs(180))
+            .timeout(Duration::from_secs(timeout_secs))
             .build()
             .expect("reqwest client");
         let base = normalize_base_url(base_url.into());
@@ -112,7 +118,7 @@ impl LlmClient {
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or(2u64.pow(attempt));
                 tracing::warn!(attempt, retry_after, %status, "LLM retry");
-                tokio::time::sleep(Duration::from_secs(retry_after.min(60))).await;
+                tokio::time::sleep(Duration::from_secs(retry_after.min(120))).await;
                 continue;
             }
 
@@ -129,8 +135,6 @@ impl LlmClient {
     }
 
     /// Structured JSON via OpenAI `response_format: json_schema` (strict).
-    /// Falls back to parsing free-form JSON from content if the gateway
-    /// returns plain text (some compatible proxies strip response_format).
     pub async fn complete_json(
         &self,
         system: &str,
@@ -139,10 +143,46 @@ impl LlmClient {
         max_tokens: u32,
     ) -> Result<(serde_json::Value, Usage, String), LlmError> {
         let req = self.json_request(system, user, schema, max_tokens);
+        self.complete_json_request(req).await
+    }
+
+    /// Vision: system text + user text + ALL page images (data URLs).
+    pub async fn complete_json_vision(
+        &self,
+        system: &str,
+        user_text: &str,
+        image_data_urls: &[String],
+        schema: serde_json::Value,
+        max_tokens: u32,
+    ) -> Result<(serde_json::Value, Usage, String), LlmError> {
+        let req = ChatCompletionRequest {
+            model: self.default_model.clone(),
+            messages: vec![
+                Message::system(system),
+                Message::user_with_images(user_text, image_data_urls),
+            ],
+            max_tokens: Some(max_tokens),
+            temperature: None,
+            response_format: Some(ResponseFormat {
+                format_type: "json_schema".into(),
+                json_schema: Some(JsonSchemaSpec {
+                    name: "epistemic_structured".into(),
+                    strict: true,
+                    schema,
+                }),
+            }),
+        };
+        self.complete_json_request(req).await
+    }
+
+    async fn complete_json_request(
+        &self,
+        req: ChatCompletionRequest,
+    ) -> Result<(serde_json::Value, Usage, String), LlmError> {
         let resp = self.chat_completions(req).await?;
         let text = resp.text().ok_or(LlmError::EmptyContent)?;
         let value: serde_json::Value = parse_json_lenient(&text).map_err(|e| {
-            LlmError::Other(anyhow::anyhow!("json parse: {e}; text={text}"))
+            LlmError::Other(anyhow::anyhow!("json parse: {e}; text={}", truncate(&text, 800)))
         })?;
         Ok((value, resp.usage, resp.model))
     }
@@ -157,16 +197,7 @@ impl LlmClient {
     ) -> ChatCompletionRequest {
         ChatCompletionRequest {
             model: self.default_model.clone(),
-            messages: vec![
-                Message {
-                    role: "system".into(),
-                    content: system.into(),
-                },
-                Message {
-                    role: "user".into(),
-                    content: user.into(),
-                },
-            ],
+            messages: vec![Message::system(system), Message::user_text(user)],
             max_tokens: Some(max_tokens),
             temperature: None,
             response_format: Some(ResponseFormat {
@@ -181,20 +212,24 @@ impl LlmClient {
     }
 }
 
+/// Encode raw image bytes as `data:image/{mime};base64,...`.
+pub fn image_data_url(mime: &str, bytes: &[u8]) -> String {
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("data:{mime};base64,{b64}")
+}
+
 /// Ensure base URL has no trailing slash and ends with `/v1`.
 fn normalize_base_url(raw: String) -> String {
     let mut s = raw.trim().trim_end_matches('/').to_string();
     if s.is_empty() {
         return "https://api.openai.com/v1".into();
     }
-    // Accept both `https://api.openai.com` and `.../v1`
     if !s.ends_with("/v1") {
         s.push_str("/v1");
     }
     s
 }
 
-/// Parse JSON, stripping optional markdown fences.
 fn parse_json_lenient(text: &str) -> Result<serde_json::Value, serde_json::Error> {
     let t = text.trim();
     if let Some(rest) = t.strip_prefix("```json") {
@@ -208,6 +243,10 @@ fn parse_json_lenient(text: &str) -> Result<serde_json::Value, serde_json::Error
         return serde_json::from_str(rest);
     }
     serde_json::from_str(t)
+}
+
+fn truncate(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
 }
 
 #[cfg(test)]
@@ -230,5 +269,15 @@ mod tests {
     fn parse_fenced_json() {
         let v = parse_json_lenient("```json\n{\"a\":1}\n```").unwrap();
         assert_eq!(v["a"], 1);
+    }
+
+    #[test]
+    fn multimodal_message_serializes() {
+        let m = Message::user_with_images("hi", &["data:image/png;base64,xx".into()]);
+        let v = serde_json::to_value(&m).unwrap();
+        assert_eq!(v["role"], "user");
+        assert!(v["content"].is_array());
+        assert_eq!(v["content"][0]["type"], "text");
+        assert_eq!(v["content"][1]["type"], "image_url");
     }
 }

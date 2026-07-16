@@ -1,5 +1,6 @@
 mod batch_orch;
 mod classify_cite;
+mod embed;
 mod extract;
 mod fetch_pdf;
 mod propose;
@@ -18,6 +19,7 @@ pub struct JobContext {
     /// Legacy TEI directory (optional reads if old tei_path rows exist). No writer.
     pub tei_dir: PathBuf,
     pub llm: Option<epistemic_llm::LlmClient>,
+    pub embed: Option<epistemic_llm::EmbeddingClient>,
     pub http: reqwest::Client,
 }
 
@@ -25,9 +27,9 @@ pub async fn dispatch(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     match job.kind.as_str() {
         job_kind::RESOLVE_METADATA => resolve::run(ctx, job).await,
         job_kind::FETCH_PDF => fetch_pdf::run(ctx, job).await,
-        // GROBID removed: old queued jobs fall through to DNA on title/abstract.
+        // GROBID removed: legacy job kind falls through to VLM DNA extraction.
         job_kind::GROBID_PARSE => {
-            tracing::warn!(id = %job.id, "grobid_parse deprecated — running extract_dna instead");
+            tracing::warn!(id = %job.id, "grobid_parse deprecated — running extract_dna (VLM) instead");
             extract::run(ctx, job).await
         }
         job_kind::EXTRACT_DNA => extract::run(ctx, job).await,
@@ -37,12 +39,7 @@ pub async fn dispatch(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         job_kind::CLASSIFY_CITATION_CONTEXTS => classify_cite::run(ctx, job).await,
         job_kind::PROPOSE_PAIRS => propose::run(ctx, job).await,
         job_kind::BATCH_ORCH => batch_orch::run(ctx, job).await,
-        job_kind::EMBED => {
-            // Embedding provider undecided (DEV.md §14). Keep stub so pipeline
-            // does not fail; propose_pairs uses citation/lineage recall instead.
-            tracing::info!("embed: stub (needs embedding provider — see DEV.md §14)");
-            Ok(())
-        }
+        job_kind::EMBED => embed::run(ctx, job).await,
         other => {
             tracing::warn!(kind = other, "unknown job kind, marking done");
             Ok(())

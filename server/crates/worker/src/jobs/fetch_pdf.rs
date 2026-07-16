@@ -1,18 +1,28 @@
 use super::{version_id, JobContext};
-use epistemic_core::domain::{job_kind, Job};
-use epistemic_core::repo::{jobs, works};
+use epistemic_core::domain::Job;
+use epistemic_core::repo::works;
 
+/// Optional PDF download for reading UI only.
+/// DNA extraction uses arXiv HTML (see resolve/extract) — do not enqueue extract here.
 pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     let vid = version_id(job)?;
     let version = works::get_version(&ctx.pool, vid).await?;
+    if version.pdf_path.is_some() {
+        tracing::info!(%vid, "fetch_pdf: already have pdf_path, skip");
+        return Ok(());
+    }
     let arxiv = version
         .arxiv_id
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("no arxiv_id for fetch_pdf"))?;
 
     let url = format!("https://arxiv.org/pdf/{arxiv}.pdf");
-    tracing::info!(%url, "downloading PDF");
-    let bytes = ctx.http.get(&url).send().await?.error_for_status()?.bytes().await?;
+    tracing::info!(%url, "downloading PDF (optional; DNA uses HTML)");
+    let resp = ctx.http.get(&url).send().await?;
+    if resp.status().as_u16() == 429 {
+        anyhow::bail!("PDF rate limited 429 — will retry later");
+    }
+    let bytes = resp.error_for_status()?.bytes().await?;
 
     let rel = format!("{vid}/{arxiv}.pdf");
     let dest = ctx.pdf_dir.join(&rel);
@@ -22,12 +32,5 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     tokio::fs::write(&dest, &bytes).await?;
     works::update_version_paths(&ctx.pool, vid, Some(&rel), None).await?;
     tracing::info!(path = %dest.display(), "PDF saved");
-
-    // No GROBID: go straight to DNA (title/abstract until a text extractor is wired).
-    let payload = serde_json::json!({
-        "version_id": vid,
-        "work_id": job.payload.get("work_id"),
-    });
-    jobs::enqueue(&ctx.pool, job_kind::EXTRACT_DNA, payload).await?;
     Ok(())
 }

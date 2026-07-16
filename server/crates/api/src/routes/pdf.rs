@@ -119,7 +119,7 @@ async fn upload_pdf(
 
     works::update_version_paths(&state.pool, id, Some(&rel), None).await?;
 
-    // No GROBID: enqueue DNA extraction (title/abstract until PDF text extractor exists).
+    // PDF ready → VLM DNA extraction (full page images).
     let payload = serde_json::json!({
         "version_id": id,
         "work_id": version.work_id,

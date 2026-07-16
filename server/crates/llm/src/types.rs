@@ -1,9 +1,80 @@
 use serde::{Deserialize, Serialize};
 
+/// OpenAI-style multimodal content: plain string or content parts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+impl From<&str> for MessageContent {
+    fn from(s: &str) -> Self {
+        MessageContent::Text(s.to_string())
+    }
+}
+
+impl From<String> for MessageContent {
+    fn from(s: String) -> Self {
+        MessageContent::Text(s)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ImageUrlBody },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageUrlBody {
+    /// `data:image/png;base64,...` or https URL
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
-    pub content: String,
+    pub content: MessageContent,
+}
+
+impl Message {
+    pub fn system(text: impl Into<String>) -> Self {
+        Self {
+            role: "system".into(),
+            content: MessageContent::Text(text.into()),
+        }
+    }
+
+    pub fn user_text(text: impl Into<String>) -> Self {
+        Self {
+            role: "user".into(),
+            content: MessageContent::Text(text.into()),
+        }
+    }
+
+    pub fn user_with_images(text: impl Into<String>, data_urls: &[String]) -> Self {
+        let mut parts = vec![ContentPart::Text {
+            text: text.into(),
+        }];
+        for url in data_urls {
+            parts.push(ContentPart::ImageUrl {
+                image_url: ImageUrlBody {
+                    url: url.clone(),
+                    detail: Some("high".into()),
+                },
+            });
+        }
+        Self {
+            role: "user".into(),
+            content: MessageContent::Parts(parts),
+        }
+    }
 }
 
 /// OpenAI Chat Completions request body (`POST /v1/chat/completions`).
@@ -60,8 +131,34 @@ pub struct Choice {
 pub struct ChoiceMessage {
     #[serde(default)]
     pub role: String,
-    #[serde(default)]
+    /// Some gateways return string; multimodal replies are still text in content.
+    #[serde(default, deserialize_with = "deserialize_content_opt")]
     pub content: Option<String>,
+}
+
+fn deserialize_content_opt<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) => Ok(Some(s)),
+        serde_json::Value::Array(parts) => {
+            let mut out = String::new();
+            for p in parts {
+                if let Some(t) = p.get("text").and_then(|x| x.as_str()) {
+                    out.push_str(t);
+                }
+            }
+            if out.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(out))
+            }
+        }
+        other => Ok(Some(other.to_string())),
+    }
 }
 
 /// Token usage — accepts both OpenAI (`prompt_tokens`) and legacy Anthropic names.
@@ -129,7 +226,6 @@ pub fn estimate_cost_usd(model: &str, usage: &Usage) -> f64 {
     } else if m.contains("opus") {
         (5.0, 25.0)
     } else {
-        // generic chat model default
         (1.0, 3.0)
     };
     let input = usage.input_tokens as f64

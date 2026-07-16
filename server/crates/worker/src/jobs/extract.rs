@@ -1,9 +1,13 @@
 use super::{version_id, JobContext};
+use crate::arxiv_html;
+use crate::metadata::RefItem;
 use epistemic_core::domain::{job_kind, ReviewStatus, SourceLayer, Job};
 use epistemic_core::repo::{jobs, works};
 use epistemic_llm::estimate_cost_usd;
 
-const PROMPT_VERSION: &str = "dna_v1";
+const PROMPT_VERSION: &str = "dna_html_v1";
+/// Keep full text within a safe context window for chat completions.
+const MAX_PAPER_CHARS: usize = 120_000;
 
 pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     let llm = ctx
@@ -12,31 +16,11 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("LLM client not configured"))?;
     let vid = version_id(job)?;
     let version = works::get_version(&ctx.pool, vid).await?;
+    let work_id = version.work_id;
 
-    let paper_text = if let Some(ref tei_rel) = version.tei_path {
-        let p = ctx.tei_dir.join(tei_rel);
-        if p.exists() {
-            let tei = tokio::fs::read_to_string(&p).await?;
-            tei_to_text(&tei)
-        } else {
-            format!("{}\n\n{}", version.title, version.abstract_text)
-        }
-    } else {
-        format!("{}\n\n{}", version.title, version.abstract_text)
-    };
+    // Prefer full arXiv HTML text → LLM (no export.arxiv.org API, no PDF page VLM).
+    let (value, usage, model) = extract_from_html_or_text(ctx, llm, &version).await?;
 
-    let paper_text: String = paper_text.chars().take(80_000).collect();
-
-    let system = include_str!("../../../llm/prompts/dna_v1.md");
-    let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../../../llm/prompts/dna_schema_v1.json"))?;
-
-    let user = format!(
-        "Extract Paper DNA from the following paper text.\n\n---\n{paper_text}\n---"
-    );
-
-    tracing::info!(%vid, model = llm.model(), "extracting DNA");
-    let (value, usage, model) = llm.complete_json(system, &user, schema, 8000).await?;
     let cost = estimate_cost_usd(&model, &usage);
 
     sqlx::query(
@@ -54,10 +38,8 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
     .execute(&ctx.pool)
     .await?;
 
-    let work_id = version.work_id;
     let model_ver = format!("{model}/{PROMPT_VERSION}");
 
-    // Field-level DNA with evidence (research_question, contributions, limitations)
     for field in ["research_question"] {
         if let Some(obj) = value.get(field) {
             insert_field_evidence(&ctx.pool, vid, field, obj).await?;
@@ -71,15 +53,15 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         }
     }
 
-    // Claims + evidence spans
     if let Some(claims) = value.get("claims").and_then(|c| c.as_array()) {
         for c in claims {
             let text = c.get("text").and_then(|t| t.as_str()).unwrap_or("");
             let source_text = c.get("source_text").and_then(|t| t.as_str()).unwrap_or("");
             let page = c.get("page").and_then(|p| p.as_i64()).unwrap_or(0) as i32;
-            if text.is_empty() || source_text.is_empty() || page < 1 {
-                continue; // no evidence → discard
+            if text.is_empty() || source_text.is_empty() {
+                continue;
             }
+            let page = if page < 0 { 0 } else { page };
             let claim_id: uuid::Uuid = sqlx::query_scalar(
                 r#"
                 INSERT INTO claims (work_id, text, source, review_status, model_version)
@@ -114,17 +96,17 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         }
     }
 
-    // Methods + evidence (extraction_field = method:<name>)
     if let Some(methods) = value.get("methods").and_then(|m| m.as_array()) {
         for m in methods {
             let name = m.get("name").and_then(|t| t.as_str()).unwrap_or("");
             let desc = m.get("description").and_then(|t| t.as_str()).unwrap_or("");
             let source_text = m.get("source_text").and_then(|t| t.as_str()).unwrap_or("");
             let page = m.get("page").and_then(|p| p.as_i64()).unwrap_or(0) as i32;
-            if name.is_empty() || source_text.is_empty() || page < 1 {
+            if name.is_empty() || source_text.is_empty() {
                 continue;
             }
-            let method_id: uuid::Uuid = sqlx::query_scalar(
+            let page = if page < 0 { 0 } else { page };
+            sqlx::query_scalar::<_, uuid::Uuid>(
                 r#"
                 INSERT INTO methods (work_id, name, description, source, review_status, model_version)
                 VALUES ($1, $2, $3, $4, $5, $6)
@@ -156,7 +138,43 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
             .bind(bbox)
             .execute(&ctx.pool)
             .await?;
-            let _ = method_id;
+        }
+    }
+
+    // Bibliography from VLM → citations
+    if let Some(refs) = value.get("references").and_then(|r| r.as_array()) {
+        let items: Vec<RefItem> = refs
+            .iter()
+            .filter_map(|r| {
+                let title = r
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let arxiv_id = r
+                    .get("arxiv_id")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.trim().trim_start_matches("arXiv:").to_string())
+                    .filter(|s| !s.is_empty());
+                let doi = r
+                    .get("doi")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let year = r.get("year").and_then(|y| y.as_i64()).map(|y| y as i32);
+                if title.is_none() && arxiv_id.is_none() && doi.is_none() {
+                    return None;
+                }
+                Some(RefItem {
+                    title,
+                    arxiv_id,
+                    doi,
+                    year,
+                })
+            })
+            .collect();
+        if !items.is_empty() {
+            store_citations(ctx, work_id, &items).await?;
         }
     }
 
@@ -164,10 +182,139 @@ pub async fn run(ctx: &JobContext, job: &Job) -> anyhow::Result<()> {
         "version_id": vid,
         "work_id": work_id,
     });
-    jobs::enqueue(&ctx.pool, job_kind::CLASSIFY_CITATION_CONTEXTS, payload.clone()).await?;
+    // Skip classify_cite without TEI; go straight to pairing + embed stub.
+    jobs::enqueue(&ctx.pool, job_kind::PROPOSE_PAIRS, payload.clone()).await?;
+    jobs::enqueue(
+        &ctx.pool,
+        job_kind::UPDATE_NEIGHBORS_CITATION,
+        payload.clone(),
+    )
+    .await?;
     jobs::enqueue(&ctx.pool, job_kind::EMBED, payload).await?;
 
-    tracing::info!(%vid, cost_usd = cost, "DNA extraction done");
+    tracing::info!(%vid, cost_usd = cost, "DNA VLM extraction done");
+    Ok(())
+}
+
+async fn extract_from_html_or_text(
+    ctx: &JobContext,
+    llm: &epistemic_llm::LlmClient,
+    version: &epistemic_core::domain::Version,
+) -> anyhow::Result<(serde_json::Value, epistemic_llm::Usage, String)> {
+    let system = include_str!("../../../llm/prompts/dna_vlm_v1.md");
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../../../llm/prompts/dna_vlm_schema_v1.json"))?;
+
+    // 1) Saved HTML on disk (tei_path reused for *.html)
+    let mut full = None;
+    if let Some(ref rel) = version.tei_path {
+        if rel.ends_with(".html") {
+            let path = ctx.pdf_dir.join(rel);
+            if path.exists() {
+                let html = tokio::fs::read_to_string(&path).await?;
+                let text = arxiv_html::html_to_text(&html);
+                if text.chars().count() > 200 {
+                    full = Some((text, format!("file:{rel}")));
+                }
+            }
+        }
+    }
+
+    // 2) Live fetch arXiv HTML
+    if full.is_none() {
+        if let Some(ref arxiv) = version.arxiv_id {
+            match arxiv_html::fetch_arxiv_html(&ctx.http, arxiv).await {
+                Ok(doc) => {
+                    let rel = format!("{}/{arxiv}.html", version.id);
+                    let dest = ctx.pdf_dir.join(&rel);
+                    if let Some(parent) = dest.parent() {
+                        tokio::fs::create_dir_all(parent).await?;
+                    }
+                    tokio::fs::write(&dest, doc.html.as_bytes()).await?;
+                    works::update_version_paths(&ctx.pool, version.id, None, Some(&rel)).await?;
+                    full = Some((doc.full_text, doc.url));
+                }
+                Err(e) => tracing::warn!(%arxiv, error = %e, "HTML fetch failed"),
+            }
+        }
+    }
+
+    let (paper_text, source) = if let Some((text, src)) = full {
+        (text, src)
+    } else {
+        tracing::warn!(vid = %version.id, "no HTML; falling back to title+abstract only");
+        (
+            format!("{}\n\n{}", version.title, version.abstract_text),
+            "title_abstract".into(),
+        )
+    };
+
+    let paper_text: String = paper_text.chars().take(MAX_PAPER_CHARS).collect();
+    let user = format!(
+        "Paper title: {}\nSource: {source} (arXiv HTML full text, not page images).\n\
+         page fields may be 0 when page is unknown — still provide source_text quotes from the body.\n\
+         Extract Paper DNA + full bibliography from the COMPLETE paper text below.\n\
+         Respond with JSON only matching the schema.\n\n\
+         --- BEGIN PAPER ---\n{paper_text}\n--- END PAPER ---",
+        version.title
+    );
+    tracing::info!(
+        vid = %version.id,
+        source = %source,
+        chars = paper_text.chars().count(),
+        model = llm.model(),
+        "extracting DNA from arXiv HTML full text"
+    );
+    Ok(llm.complete_json(system, &user, schema, 16_000).await?)
+}
+
+async fn store_citations(
+    ctx: &JobContext,
+    wid: uuid::Uuid,
+    refs: &[RefItem],
+) -> anyhow::Result<()> {
+    sqlx::query(r#"DELETE FROM citations WHERE citing_work_id = $1"#)
+        .bind(wid)
+        .execute(&ctx.pool)
+        .await?;
+
+    tracing::info!(count = refs.len(), %wid, "storing VLM references");
+    for r in refs {
+        let cited_work_id = if let Some(ref ax) = r.arxiv_id {
+            works::find_version_by_arxiv(&ctx.pool, ax)
+                .await?
+                .map(|v| v.work_id)
+        } else if let Some(ref doi) = r.doi {
+            works::find_version_by_doi(&ctx.pool, doi)
+                .await?
+                .map(|v| v.work_id)
+        } else {
+            None
+        };
+
+        let external = if cited_work_id.is_none() {
+            Some(serde_json::json!({
+                "title": r.title,
+                "arxiv_id": r.arxiv_id,
+                "doi": r.doi,
+                "year": r.year,
+            }))
+        } else {
+            None
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO citations (citing_work_id, cited_work_id, cited_external)
+            VALUES ($1, $2, $3)
+            "#,
+        )
+        .bind(wid)
+        .bind(cited_work_id)
+        .bind(external)
+        .execute(&ctx.pool)
+        .await?;
+    }
     Ok(())
 }
 
@@ -182,9 +329,10 @@ async fn insert_field_evidence(
         .and_then(|t| t.as_str())
         .unwrap_or("");
     let page = obj.get("page").and_then(|p| p.as_i64()).unwrap_or(0) as i32;
-    if source_text.is_empty() || page < 1 {
+    if source_text.is_empty() {
         return Ok(());
     }
+    let page = if page < 0 { 0 } else { page };
     let text = obj
         .get("text")
         .or_else(|| obj.get("name"))
@@ -207,67 +355,14 @@ async fn insert_field_evidence(
     Ok(())
 }
 
-/// TEI → plain text, preserving page markers when `coords` / `n` attributes appear.
-fn tei_to_text(xml: &str) -> String {
-    let mut out = String::with_capacity(xml.len());
-    let mut in_tag = false;
-    let mut tag_buf = String::new();
-    for c in xml.chars() {
-        match c {
-            '<' => {
-                in_tag = true;
-                tag_buf.clear();
-            }
-            '>' => {
-                in_tag = false;
-                // page break hints
-                let t = tag_buf.to_lowercase();
-                if t.starts_with("pb ") || t == "pb" || t.starts_with("pb/") {
-                    if let Some(n) = attr_value(&tag_buf, "n") {
-                        out.push_str(&format!("\n[[page:{n}]]\n"));
-                    }
-                }
-                // surface coords as optional markers for LLM context
-                if t.contains("coords=") {
-                    if let Some(coords) = attr_value(&tag_buf, "coords") {
-                        // coords often "p x0 y0 x1 y1" — keep page prefix if present
-                        let page = coords.split_whitespace().next().unwrap_or("");
-                        if page.chars().all(|ch| ch.is_ascii_digit()) && !page.is_empty() {
-                            // lightweight page hint only once in a while is fine
-                            let _ = page;
-                        }
-                    }
-                }
-            }
-            _ if in_tag => tag_buf.push(c),
-            _ => out.push(c),
-        }
-    }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn attr_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let key = format!("{name}=\"");
-    let start = tag.find(&key)? + key.len();
-    let rest = &tag[start..];
-    let end = rest.find('"')?;
-    Some(&rest[..end])
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn tei_extracts_page_markers() {
-        let xml = r#"<TEI><text><pb n="2"/><p>Hello world</p><pb n="3"/><p>More</p></text></TEI>"#;
-        let t = tei_to_text(xml);
-        assert!(t.contains("[[page:2]]") || t.contains("Hello"));
-        assert!(t.contains("Hello") && t.contains("More"));
-    }
-
-    #[test]
-    fn attr_value_parses() {
-        assert_eq!(attr_value(r#"pb n="12" /"#, "n"), Some("12"));
+    fn schema_parses() {
+        let schema: serde_json::Value =
+            serde_json::from_str(include_str!("../../../llm/prompts/dna_vlm_schema_v1.json"))
+                .unwrap();
+        assert!(schema.get("properties").is_some());
+        assert!(schema["properties"].get("references").is_some());
     }
 }

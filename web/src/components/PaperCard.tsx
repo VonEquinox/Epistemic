@@ -71,11 +71,11 @@ const JOB_STATUS_LABEL: Record<JobStatus, string> = {
 };
 
 const JOB_KIND_LABEL: Record<string, string> = {
-  resolve_metadata: '解析元数据',
-  fetch_pdf: '拉取 PDF',
+  resolve_metadata: '爬 arXiv HTML / 元数据',
+  fetch_pdf: '拉取 PDF（可选）',
   grobid_parse: '解析（已弃用→DNA）',
-  extract_dna: 'DNA 抽取',
-  fetch_references: '获取参考文献',
+  extract_dna: 'HTML 全文 → LLM 抽 DNA',
+  fetch_references: '获取参考文献（已并入 DNA）',
   update_neighbors_citation: '更新引用邻居',
   update_neighbors_lineage: '更新谱系邻居',
   classify_citation_contexts: '引文上下文分类',

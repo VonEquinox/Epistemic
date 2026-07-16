@@ -12,7 +12,7 @@
 | 前端 | Vite · React · TypeScript · Cytoscape.js · PDF.js |
 | 后端 | Rust · axum · sqlx · tokio |
 | 数据 | PostgreSQL 16 + pgvector |
-| 解析 | 无 GROBID（PDF 存盘；DNA 暂用标题/摘要 + LLM；可后续接 VLM） |
+| 解析 | VLM：PDF 全页转图后送多模态 Chat Completions |
 | LLM | OpenAI Chat Completions（兼容网关） |
 | 部署 | docker-compose + Caddy |
 

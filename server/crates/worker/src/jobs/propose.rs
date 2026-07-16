@@ -237,13 +237,13 @@ async fn recall_candidates(ctx: &JobContext, seed: Uuid) -> anyhow::Result<Vec<U
         score: f64,
     }
 
-    // 1) neighbors table (citation_coupling + method_lineage)
+    // 1) neighbors table (citation_coupling + method_lineage + topic)
     let from_neighbors: Vec<Row> = sqlx::query_as(
         r#"
         SELECT neighbor_work_id AS other_id, MAX(score) AS score
         FROM neighbors
         WHERE work_id = $1
-          AND dimension IN ('citation_coupling', 'method_lineage')
+          AND dimension IN ('citation_coupling', 'method_lineage', 'topic')
         GROUP BY neighbor_work_id
         ORDER BY score DESC
         LIMIT 32
@@ -286,6 +286,21 @@ async fn recall_candidates(ctx: &JobContext, seed: Uuid) -> anyhow::Result<Vec<U
     .await
     .unwrap_or_default();
 
+    // 4) any other works in the library (so a fresh import batch still pairs)
+    let from_library: Vec<Row> = sqlx::query_as(
+        r#"
+        SELECT id AS other_id, 0.12::float AS score
+        FROM works
+        WHERE id <> $1
+        ORDER BY created_at DESC
+        LIMIT 48
+        "#,
+    )
+    .bind(seed)
+    .fetch_all(&ctx.pool)
+    .await
+    .unwrap_or_default();
+
     // Works that already have a non-rejected relation with seed (skip re-proposing)
     let already: HashSet<Uuid> = sqlx::query_scalar(
         r#"
@@ -311,6 +326,7 @@ async fn recall_candidates(ctx: &JobContext, seed: Uuid) -> anyhow::Result<Vec<U
         .into_iter()
         .chain(from_cites)
         .chain(from_project)
+        .chain(from_library)
     {
         if row.other_id == seed || already.contains(&row.other_id) {
             continue;

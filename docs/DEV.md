@@ -28,7 +28,7 @@ epistemic/
 | API 契约 | utoipa 生成 openapi.json → openapi-typescript 生成前端类型化客户端 |
 | 数据 | PostgreSQL 16 + pgvector；全文检索用 Postgres FTS |
 | 任务队列 | Postgres jobs 表 + `FOR UPDATE SKIP LOCKED`，worker 为独立二进制 |
-| PDF 解析 | 已移除 GROBID；当前 DNA 用标题/摘要 + LLM。可选读历史 TEI；全文/坐标解析待接（VLM 或其它） |
+| PDF 解析 | **VLM 全页截图**：`pdftoppm` → PNG data URLs → Chat Completions 多模态；DNA+参考文献由模型输出 |
 | LLM | OpenAI Chat Completions 兼容 API，reqwest 自封装薄客户端（原生 HTTP） |
 | 部署 | docker-compose 单机：caddy（自动 HTTPS）+ api + worker + postgres |
 
@@ -44,7 +44,7 @@ Caddy ──▶ api（axum）──▶ PostgreSQL（唯一事实源：实体/关
              worker（轮询 jobs 表）
                 ├──▶ Chat Completions API（DNA 抽取 / 引文分类 / 成对判定）
                 ├──▶ arXiv API（元数据）；参考文献需其它来源（GROBID 已移除）
-                └──▶ Embedding API（候选召回 + 主题引力，供应商未决）
+                └──▶ Embedding API（SiliconFlow Qwen3-Embedding-8B，候选召回 + 主题引力）
 ```
 
 ## 4. 数据库 Schema 草案
@@ -224,11 +224,11 @@ web/src/
 每篇论文导入后的任务链（每步一行 jobs 记录，失败指数退避重试，≤3 次）：
 
 ```
-resolve_metadata → fetch_pdf(仅 arXiv 自动) → extract_dna
+resolve_metadata → fetch_pdf(仅 arXiv 自动) → extract_dna(VLM: 全页 PNG)
       │                                          │
-      └─▶ fetch_references（无解析器时多为空）    ├─▶ classify_citation_contexts（无 TEI 则跳过）
-           └─▶ update_neighbors(citation_coupling)├─▶ embed
-                                                 └─▶ propose_pairs(向量召回 K≈10 → 成对判定)
+      └─▶ fetch_references（可空；refs 主要由 VLM 写） ├─▶ propose_pairs
+                                                     ├─▶ update_neighbors(citation)
+                                                     └─▶ embed (stub)
 事件触发：关系 确认/拒绝/新候选 ─▶ update_neighbors(method_lineage, 增量 BFS ≤4 跳)
 ```
 
@@ -298,7 +298,14 @@ worker 单进程多并发（tokio），按 kind 限流：LLM 类任务并发 ≤
 
 ### 8.7 Embedding
 
-与 Chat Completions 解耦（未决 §14）：可用 OpenAI embeddings、Voyage 或本地 sidecar。选择决定 pgvector 维度 D。用途：候选召回与主题引力，同一套向量复用。
+与 Chat Completions 解耦。默认 **SiliconFlow OpenAI 兼容** `POST {EMBEDDING_BASE_URL}/embeddings`：
+
+- `EMBEDDING_API_KEY`（或 `SILICONFLOW_API_KEY`）
+- `EMBEDDING_BASE_URL`（默认 `https://api.siliconflow.cn/v1`）
+- `EMBEDDING_MODEL`（默认 `Qwen/Qwen3-Embedding-8B`）
+- `EMBEDDING_DIM=4096`（与 `embeddings.vec vector(4096)` 一致；改模型需新 migration 改维度并重嵌）
+
+用途：work 级 `title+abstract+methods` 向量、topic 邻居 top-32、propose_pairs 召回。
 
 ## 9. 距离引擎（服务端计算）
 
@@ -348,6 +355,6 @@ worker 单进程多并发（tokio），按 kind 限流：LLM 类任务并发 ≤
 
 ## 14. 未决
 
-1. Embedding 供应商（Voyage API vs 本地 sidecar）→ 定 pgvector 维度
+1. Embedding 已接 SiliconFlow `Qwen/Qwen3-Embedding-8B`（dim 4096）；换模型需 migration 改 `vector(D)` 并清空/重嵌
 2. LLM 模型档位策略（先用默认 `OPENAI_MODEL` 建基线，测集数据出来后定）
 3. 论文清单实际格式（同 PRD §11.2）→ 决定 /imports 解析器

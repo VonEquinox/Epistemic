@@ -306,13 +306,13 @@ CREATE INDEX annotations_work_idx ON annotations (work_id);
 
 -- ─── Distance engine & vectors ───────────────────────────────────────────────
 
--- D is decided by embedding provider; default 1024 for voyage-3
+-- D matched to embedding provider; Qwen3-Embedding-8B = 4096 (see 002 migration)
 CREATE TABLE embeddings (
     entity_kind entity_kind NOT NULL,
     entity_id   UUID NOT NULL,
     field       TEXT NOT NULL DEFAULT 'default',
     model       TEXT NOT NULL,
-    vec         vector(1024) NOT NULL,
+    vec         vector(4096) NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (entity_kind, entity_id, field)
 );

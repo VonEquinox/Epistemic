@@ -36,13 +36,27 @@ pub async fn enqueue_many(
 pub async fn claim_next(pool: &PgPool, worker_id: &str) -> AppResult<Option<Job>> {
     let mut tx = pool.begin().await?;
 
-    let row = sqlx::query_as::<_, Job>(
+    // Prefer DNA / embed / pairing over bulk metadata crawl so one paper can finish
+        // end-to-end instead of crawling all 80 HTMLs first.
+        let row = sqlx::query_as::<_, Job>(
         r#"
         SELECT id, kind, payload, status, attempts, run_after,
                locked_by, locked_at, last_error, created_at
         FROM jobs
         WHERE status = 'queued' AND run_after <= now()
-        ORDER BY created_at
+        ORDER BY
+          CASE kind
+            WHEN 'extract_dna' THEN 0
+            WHEN 'propose_pairs' THEN 1
+            WHEN 'embed' THEN 1
+            WHEN 'update_neighbors_citation' THEN 2
+            WHEN 'update_neighbors_lineage' THEN 2
+            WHEN 'resolve_metadata' THEN 3
+            WHEN 'fetch_pdf' THEN 4
+            WHEN 'fetch_references' THEN 4
+            ELSE 5
+          END,
+          created_at
         FOR UPDATE SKIP LOCKED
         LIMIT 1
         "#,

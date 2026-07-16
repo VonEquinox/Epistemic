@@ -153,7 +153,7 @@ created_by, model_version, created_at
 
 URL 解析策略：arXiv 链接自动补全元数据并拉取 PDF；其他链接（OpenReview、ACL Anthology、出版社页）尽力解析元数据，PDF 支持手动上传补充。
 
-管线：标识符解析 → 元数据补全（arXiv API；非 arXiv 依赖导入字段 / 手动）→ 去重 → 家族识别 → 拉 PDF → DNA 抽取（当前主要基于标题/摘要 + LLM；全文解析器已移除 GROBID）→ 候选关系生成 → 距离维度更新。参考文献自动抽取暂缺，待 VLM/其它解析器。全部异步，导入即刻可见条目，AI 结果就绪后增量出现。
+管线：标识符解析 → 元数据补全（arXiv API）→ 去重 → 家族识别 → 拉 PDF → **全页渲染为图 → VLM 抽取 DNA 与参考文献** → 候选关系生成 → 距离维度更新。全部异步。
 
 ### 5.2 论文卡片（Paper DNA）
 
