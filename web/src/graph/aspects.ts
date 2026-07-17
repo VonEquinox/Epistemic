@@ -34,5 +34,5 @@ export const ASPECT_EDGE_MIN_SCORE = 0.5;
  * Sparser top-K used only as fcose springs so the map spreads out.
  * Display edges can be denser without collapsing the layout.
  */
-export const ASPECT_LAYOUT_TOP_K = 4;
+export const ASPECT_LAYOUT_TOP_K = 6;
 export const ASPECT_LAYOUT_MIN_SCORE = 0.4;

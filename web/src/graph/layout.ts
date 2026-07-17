@@ -88,27 +88,23 @@ export interface LayoutSpring {
   sourceId: string;
   targetId: string;
   score: number;
-  /** True when either endpoint ranks the other as its strongest neighbor. */
-  primary: boolean;
-  /** Best zero-based rank assigned by either endpoint. */
-  bestRank: number;
   idealLength: number;
   elasticity: number;
 }
 
-export function layoutSpringLength(score: number, primary: boolean): number {
+/** Stronger similarity means a shorter physical spring. */
+export function layoutSpringLength(score: number): number {
   const similarity = Math.max(0, Math.min(1, score));
-  const falloff = (1 - similarity) * (1 - similarity);
-  // Primary links form local geometry; secondary links only keep clusters coherent.
-  return primary ? 70 + 260 * falloff : 360 + 220 * falloff;
+  return 90 + 430 * Math.pow(1 - similarity, 1.6);
 }
 
-export function layoutSpringElasticity(primary: boolean, bestRank: number): number {
-  if (primary) return 6;
-  return 0.03 / Math.max(1, bestRank);
+/** Stronger similarity also means a stiffer spring. */
+export function layoutSpringElasticity(score: number): number {
+  const similarity = Math.max(0, Math.min(1, score));
+  return 0.18 + 2.8 * similarity * similarity;
 }
 
-/** Convert directed top-K lists into canonical undirected layout springs. */
+/** Convert directed top-K lists into weighted undirected physical springs. */
 export function buildLayoutSprings(
   scores: Map<string, Map<string, number>>,
 ): LayoutSpring[] {
@@ -118,12 +114,8 @@ export function buildLayoutSprings(
   >();
 
   for (const [sourceId, neighbors] of scores) {
-    const ranked = [...neighbors]
-      .filter(
-        ([targetId, score]) => targetId !== sourceId && Number.isFinite(score),
-      )
-      .sort((left, right) => right[1] - left[1]);
-    ranked.forEach(([targetId, score], rank) => {
+    for (const [targetId, score] of neighbors) {
+      if (targetId === sourceId || !Number.isFinite(score)) continue;
       const [source, target] = [sourceId, targetId].sort();
       const key = `${source}|${target}`;
       const existing = pairs.get(key);
@@ -133,226 +125,18 @@ export function buildLayoutSprings(
           sourceId: source,
           targetId: target,
           score,
-          primary: rank === 0,
-          bestRank: rank,
         });
-        return;
+      } else {
+        existing.score = Math.max(existing.score, score);
       }
-      existing.score = Math.max(existing.score, score);
-      existing.primary ||= rank === 0;
-      existing.bestRank = Math.min(existing.bestRank, rank);
-    });
+    }
   }
 
   return [...pairs.values()].map((spring) => ({
     ...spring,
-    idealLength: layoutSpringLength(spring.score, spring.primary),
-    elasticity: layoutSpringElasticity(spring.primary, spring.bestRank),
+    idealLength: layoutSpringLength(spring.score),
+    elasticity: layoutSpringElasticity(spring.score),
   }));
-}
-
-export interface GraphPosition {
-  x: number;
-  y: number;
-}
-
-export interface CollisionBounds {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-export interface NearestNeighborRefinementOptions {
-  iterations: number;
-  margin: number;
-  step: number;
-  maxMove: number;
-  minSeparation: number;
-  collisionPadding: number;
-  collisionRepulsion: number;
-  anchorStrength: number;
-}
-
-const DEFAULT_REFINEMENT: NearestNeighborRefinementOptions = {
-  iterations: 120,
-  margin: 8,
-  step: 0.35,
-  maxMove: 12,
-  minSeparation: 45,
-  collisionPadding: 8,
-  collisionRepulsion: 0.12,
-  anchorStrength: 0.004,
-};
-
-/**
- * Ordinal post-pass for a global layout. It pulls each node toward its
- * strongest neighbor only when another node is geometrically closer, while
- * collision and anchor forces preserve readability and the overall map shape.
- */
-export function refineNearestNeighborPositions(
-  positions: Map<string, GraphPosition>,
-  scores: Map<string, Map<string, number>>,
-  options: Partial<NearestNeighborRefinementOptions> = {},
-  collisionBounds?: Map<string, CollisionBounds>,
-): Map<string, GraphPosition> {
-  const config = { ...DEFAULT_REFINEMENT, ...options };
-  const ids = [...positions.keys()];
-  const refined = new Map(
-    [...positions].map(([id, position]) => [id, { ...position }]),
-  );
-  const anchors = new Map(
-    [...positions].map(([id, position]) => [id, { ...position }]),
-  );
-  if (ids.length < 3) return refined;
-
-  const strongest = new Map<string, string>();
-  for (const [sourceId, neighbors] of scores) {
-    if (!refined.has(sourceId)) continue;
-    const target = [...neighbors]
-      .filter(
-        ([targetId, score]) => refined.has(targetId) && Number.isFinite(score),
-      )
-      .sort((left, right) => right[1] - left[1])[0];
-    if (target) strongest.set(sourceId, target[0]);
-  }
-
-  const unit = (dx: number, dy: number, key: string) => {
-    const distance = Math.hypot(dx, dy);
-    if (distance > 1e-6) return { x: dx / distance, y: dy / distance, distance };
-    const fallback = seedPosition(key);
-    const fallbackLength = Math.hypot(fallback.x, fallback.y) || 1;
-    return {
-      x: fallback.x / fallbackLength,
-      y: fallback.y / fallbackLength,
-      distance: 0,
-    };
-  };
-
-  for (let iteration = 0; iteration < config.iterations; iteration += 1) {
-    const deltas = new Map(ids.map((id) => [id, { x: 0, y: 0 }]));
-    const distance = (leftId: string, rightId: string) => {
-      const left = refined.get(leftId)!;
-      const right = refined.get(rightId)!;
-      return Math.hypot(left.x - right.x, left.y - right.y);
-    };
-
-    for (const sourceId of ids) {
-      const targetId = strongest.get(sourceId);
-      if (!targetId) continue;
-      let rivalId: string | null = null;
-      let rivalDistance = Number.POSITIVE_INFINITY;
-      for (const candidateId of ids) {
-        if (candidateId === sourceId || candidateId === targetId) continue;
-        const candidateDistance = distance(sourceId, candidateId);
-        if (candidateDistance < rivalDistance) {
-          rivalId = candidateId;
-          rivalDistance = candidateDistance;
-        }
-      }
-      if (!rivalId) continue;
-
-      const targetDistance = distance(sourceId, targetId);
-      const violation = targetDistance + config.margin - rivalDistance;
-      if (violation <= 0) continue;
-      const amount = Math.min(config.maxMove, violation * config.step);
-      const source = refined.get(sourceId)!;
-      const target = refined.get(targetId)!;
-      const rival = refined.get(rivalId)!;
-      const towardTarget = unit(
-        target.x - source.x,
-        target.y - source.y,
-        `${sourceId}|${targetId}`,
-      );
-      deltas.get(sourceId)!.x += towardTarget.x * amount * 0.45;
-      deltas.get(sourceId)!.y += towardTarget.y * amount * 0.45;
-      deltas.get(targetId)!.x -= towardTarget.x * amount * 0.45;
-      deltas.get(targetId)!.y -= towardTarget.y * amount * 0.45;
-
-      const awayFromRival = unit(
-        source.x - rival.x,
-        source.y - rival.y,
-        `${sourceId}|${rivalId}`,
-      );
-      deltas.get(sourceId)!.x += awayFromRival.x * amount * 0.2;
-      deltas.get(sourceId)!.y += awayFromRival.y * amount * 0.2;
-      deltas.get(rivalId)!.x -= awayFromRival.x * amount * 0.2;
-      deltas.get(rivalId)!.y -= awayFromRival.y * amount * 0.2;
-    }
-
-    for (let leftIndex = 0; leftIndex < ids.length; leftIndex += 1) {
-      for (let rightIndex = leftIndex + 1; rightIndex < ids.length; rightIndex += 1) {
-        const leftId = ids[leftIndex];
-        const rightId = ids[rightIndex];
-        const left = refined.get(leftId)!;
-        const right = refined.get(rightId)!;
-        const leftBounds = collisionBounds?.get(leftId);
-        const rightBounds = collisionBounds?.get(rightId);
-        if (leftBounds && rightBounds) {
-          const overlapX =
-            Math.min(
-              left.x + leftBounds.right,
-              right.x + rightBounds.right,
-            ) -
-              Math.max(
-                left.x + leftBounds.left,
-                right.x + rightBounds.left,
-              ) +
-            config.collisionPadding;
-          const overlapY =
-            Math.min(
-              left.y + leftBounds.bottom,
-              right.y + rightBounds.bottom,
-            ) -
-              Math.max(
-                left.y + leftBounds.top,
-                right.y + rightBounds.top,
-              ) +
-            config.collisionPadding;
-          if (overlapX <= 0 || overlapY <= 0) continue;
-          if (overlapX < overlapY) {
-            const direction = left.x <= right.x ? -1 : 1;
-            const amount = overlapX * config.collisionRepulsion;
-            deltas.get(leftId)!.x += direction * amount;
-            deltas.get(rightId)!.x -= direction * amount;
-          } else {
-            const direction = left.y <= right.y ? -1 : 1;
-            const amount = overlapY * config.collisionRepulsion;
-            deltas.get(leftId)!.y += direction * amount;
-            deltas.get(rightId)!.y -= direction * amount;
-          }
-          continue;
-        }
-
-        const direction = unit(
-          left.x - right.x,
-          left.y - right.y,
-          `${leftId}|${rightId}`,
-        );
-        if (direction.distance >= config.minSeparation) continue;
-        const amount =
-          (config.minSeparation - direction.distance) * config.collisionRepulsion;
-        deltas.get(leftId)!.x += direction.x * amount;
-        deltas.get(leftId)!.y += direction.y * amount;
-        deltas.get(rightId)!.x -= direction.x * amount;
-        deltas.get(rightId)!.y -= direction.y * amount;
-      }
-    }
-
-    for (const id of ids) {
-      const position = refined.get(id)!;
-      const anchor = anchors.get(id)!;
-      const delta = deltas.get(id)!;
-      delta.x += (anchor.x - position.x) * config.anchorStrength;
-      delta.y += (anchor.y - position.y) * config.anchorStrength;
-      const magnitude = Math.hypot(delta.x, delta.y);
-      const scale = magnitude > config.maxMove ? config.maxMove / magnitude : 1;
-      position.x += delta.x * scale;
-      position.y += delta.y * scale;
-    }
-  }
-
-  return refined;
 }
 
 /**
@@ -520,7 +304,6 @@ export const __test = {
   buildLayoutSprings,
   layoutSpringLength,
   layoutSpringElasticity,
-  refineNearestNeighborPositions,
   bundleEdges,
   semanticGroupOf,
   readerBorderWidth,

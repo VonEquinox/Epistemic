@@ -41,175 +41,34 @@ function topNeighborMap(scores, topK = 4, minScore = 0) {
   }
   return out;
 }
-function layoutSpringLength(score, primary) {
+function layoutSpringLength(score) {
   const similarity = Math.max(0, Math.min(1, score));
-  const falloff = (1 - similarity) * (1 - similarity);
-  return primary ? 70 + 260 * falloff : 360 + 220 * falloff;
+  return 90 + 430 * Math.pow(1 - similarity, 1.6);
 }
-function layoutSpringElasticity(primary, bestRank) {
-  if (primary) return 6;
-  return 0.03 / Math.max(1, bestRank);
+function layoutSpringElasticity(score) {
+  const similarity = Math.max(0, Math.min(1, score));
+  return 0.18 + 2.8 * similarity * similarity;
 }
 function buildLayoutSprings(scores) {
   const pairs = new Map();
   for (const [sourceId, neighbors] of scores) {
-    const ranked = [...neighbors]
-      .filter(
-        ([targetId, score]) => targetId !== sourceId && Number.isFinite(score),
-      )
-      .sort((left, right) => right[1] - left[1]);
-    ranked.forEach(([targetId, score], rank) => {
+    for (const [targetId, score] of neighbors) {
+      if (targetId === sourceId || !Number.isFinite(score)) continue;
       const [source, target] = [sourceId, targetId].sort();
       const key = `${source}|${target}`;
       const existing = pairs.get(key);
       if (!existing) {
-        pairs.set(key, {
-          key,
-          sourceId: source,
-          targetId: target,
-          score,
-          primary: rank === 0,
-          bestRank: rank,
-        });
+        pairs.set(key, { key, sourceId: source, targetId: target, score });
       } else {
         existing.score = Math.max(existing.score, score);
-        existing.primary ||= rank === 0;
-        existing.bestRank = Math.min(existing.bestRank, rank);
       }
-    });
+    }
   }
   return [...pairs.values()].map((spring) => ({
     ...spring,
-    idealLength: layoutSpringLength(spring.score, spring.primary),
-    elasticity: layoutSpringElasticity(spring.primary, spring.bestRank),
+    idealLength: layoutSpringLength(spring.score),
+    elasticity: layoutSpringElasticity(spring.score),
   }));
-}
-function refineNearestNeighborPositions(
-  positions,
-  scores,
-  options = {},
-  collisionBounds,
-) {
-  const config = {
-    iterations: 120,
-    margin: 8,
-    step: 0.35,
-    maxMove: 12,
-    minSeparation: 45,
-    collisionPadding: 8,
-    collisionRepulsion: 0.12,
-    anchorStrength: 0.004,
-    ...options,
-  };
-  const ids = [...positions.keys()];
-  const refined = new Map([...positions].map(([id, value]) => [id, { ...value }]));
-  const anchors = new Map([...positions].map(([id, value]) => [id, { ...value }]));
-  const strongest = new Map();
-  for (const [sourceId, neighbors] of scores) {
-    const target = [...neighbors]
-      .filter(([targetId, score]) => refined.has(targetId) && Number.isFinite(score))
-      .sort((left, right) => right[1] - left[1])[0];
-    if (target && refined.has(sourceId)) strongest.set(sourceId, target[0]);
-  }
-  const unit = (dx, dy, key) => {
-    const distance = Math.hypot(dx, dy);
-    if (distance > 1e-6) return { x: dx / distance, y: dy / distance, distance };
-    const fallback = seedPosition(key);
-    const fallbackLength = Math.hypot(fallback.x, fallback.y) || 1;
-    return { x: fallback.x / fallbackLength, y: fallback.y / fallbackLength, distance: 0 };
-  };
-  for (let iteration = 0; iteration < config.iterations; iteration += 1) {
-    const deltas = new Map(ids.map((id) => [id, { x: 0, y: 0 }]));
-    const distance = (leftId, rightId) => {
-      const left = refined.get(leftId);
-      const right = refined.get(rightId);
-      return Math.hypot(left.x - right.x, left.y - right.y);
-    };
-    for (const sourceId of ids) {
-      const targetId = strongest.get(sourceId);
-      if (!targetId) continue;
-      let rivalId = null;
-      let rivalDistance = Number.POSITIVE_INFINITY;
-      for (const candidateId of ids) {
-        if (candidateId === sourceId || candidateId === targetId) continue;
-        const candidateDistance = distance(sourceId, candidateId);
-        if (candidateDistance < rivalDistance) {
-          rivalId = candidateId;
-          rivalDistance = candidateDistance;
-        }
-      }
-      if (!rivalId) continue;
-      const targetDistance = distance(sourceId, targetId);
-      const violation = targetDistance + config.margin - rivalDistance;
-      if (violation <= 0) continue;
-      const amount = Math.min(config.maxMove, violation * config.step);
-      const source = refined.get(sourceId);
-      const target = refined.get(targetId);
-      const rival = refined.get(rivalId);
-      const towardTarget = unit(target.x - source.x, target.y - source.y, `${sourceId}|${targetId}`);
-      deltas.get(sourceId).x += towardTarget.x * amount * 0.45;
-      deltas.get(sourceId).y += towardTarget.y * amount * 0.45;
-      deltas.get(targetId).x -= towardTarget.x * amount * 0.45;
-      deltas.get(targetId).y -= towardTarget.y * amount * 0.45;
-      const awayFromRival = unit(source.x - rival.x, source.y - rival.y, `${sourceId}|${rivalId}`);
-      deltas.get(sourceId).x += awayFromRival.x * amount * 0.2;
-      deltas.get(sourceId).y += awayFromRival.y * amount * 0.2;
-      deltas.get(rivalId).x -= awayFromRival.x * amount * 0.2;
-      deltas.get(rivalId).y -= awayFromRival.y * amount * 0.2;
-    }
-    for (let leftIndex = 0; leftIndex < ids.length; leftIndex += 1) {
-      for (let rightIndex = leftIndex + 1; rightIndex < ids.length; rightIndex += 1) {
-        const leftId = ids[leftIndex];
-        const rightId = ids[rightIndex];
-        const left = refined.get(leftId);
-        const right = refined.get(rightId);
-        const leftBounds = collisionBounds?.get(leftId);
-        const rightBounds = collisionBounds?.get(rightId);
-        if (leftBounds && rightBounds) {
-          const overlapX =
-            Math.min(left.x + leftBounds.right, right.x + rightBounds.right) -
-              Math.max(left.x + leftBounds.left, right.x + rightBounds.left) +
-            config.collisionPadding;
-          const overlapY =
-            Math.min(left.y + leftBounds.bottom, right.y + rightBounds.bottom) -
-              Math.max(left.y + leftBounds.top, right.y + rightBounds.top) +
-            config.collisionPadding;
-          if (overlapX <= 0 || overlapY <= 0) continue;
-          if (overlapX < overlapY) {
-            const direction = left.x <= right.x ? -1 : 1;
-            const amount = overlapX * config.collisionRepulsion;
-            deltas.get(leftId).x += direction * amount;
-            deltas.get(rightId).x -= direction * amount;
-          } else {
-            const direction = left.y <= right.y ? -1 : 1;
-            const amount = overlapY * config.collisionRepulsion;
-            deltas.get(leftId).y += direction * amount;
-            deltas.get(rightId).y -= direction * amount;
-          }
-          continue;
-        }
-        const direction = unit(left.x - right.x, left.y - right.y, `${leftId}|${rightId}`);
-        if (direction.distance >= config.minSeparation) continue;
-        const amount = (config.minSeparation - direction.distance) * config.collisionRepulsion;
-        deltas.get(leftId).x += direction.x * amount;
-        deltas.get(leftId).y += direction.y * amount;
-        deltas.get(rightId).x -= direction.x * amount;
-        deltas.get(rightId).y -= direction.y * amount;
-      }
-    }
-    for (const id of ids) {
-      const position = refined.get(id);
-      const anchor = anchors.get(id);
-      const delta = deltas.get(id);
-      delta.x += (anchor.x - position.x) * config.anchorStrength;
-      delta.y += (anchor.y - position.y) * config.anchorStrength;
-      const magnitude = Math.hypot(delta.x, delta.y);
-      const scale = magnitude > config.maxMove ? config.maxMove / magnitude : 1;
-      position.x += delta.x * scale;
-      position.y += delta.y * scale;
-    }
-  }
-  return refined;
 }
 function semanticGroupOf(type) {
   const SEMANTIC = {
@@ -420,52 +279,11 @@ const springs = buildLayoutSprings(
     ['b', new Map([['a', 0.85], ['c', 0.6]])],
   ]),
 );
-const primarySpring = springs.find((spring) => spring.key === 'a|b');
-const secondarySpring = springs.find((spring) => spring.key === 'a|c');
+const strongSpring = springs.find((spring) => spring.key === 'a|b');
+const weakerSpring = springs.find((spring) => spring.key === 'a|c');
 assert.equal(springs.filter((spring) => spring.key === 'a|b').length, 1);
-assert.equal(primarySpring.primary, true);
-assert.equal(primarySpring.score, 0.9);
-assert.ok(primarySpring.idealLength < secondarySpring.idealLength);
-assert.ok(primarySpring.elasticity > secondarySpring.elasticity);
-
-const initialPositions = new Map([
-  ['a', { x: 0, y: 0 }],
-  ['b', { x: 120, y: 0 }],
-  ['c', { x: 20, y: 0 }],
-  ['d', { x: 0, y: 100 }],
-]);
-const refinedPositions = refineNearestNeighborPositions(
-  initialPositions,
-  new Map([['a', new Map([['b', 0.9], ['c', 0.5]])]]),
-  { iterations: 240, margin: 1, minSeparation: 0, anchorStrength: 0 },
-);
-const distance = (left, right) =>
-  Math.hypot(left.x - right.x, left.y - right.y);
-assert.ok(
-  distance(refinedPositions.get('a'), refinedPositions.get('b')) <
-    distance(refinedPositions.get('a'), refinedPositions.get('c')),
-);
-assert.deepEqual(initialPositions.get('a'), { x: 0, y: 0 });
-
-const overlappingPositions = new Map([
-  ['a', { x: 0, y: 0 }],
-  ['b', { x: 15, y: 0 }],
-  ['c', { x: 200, y: 0 }],
-]);
-const collisionBoxes = new Map([
-  ['a', { left: -35, right: 35, top: -10, bottom: 22 }],
-  ['b', { left: -35, right: 35, top: -10, bottom: 22 }],
-  ['c', { left: -35, right: 35, top: -10, bottom: 22 }],
-]);
-const separatedPositions = refineNearestNeighborPositions(
-  overlappingPositions,
-  new Map(),
-  { iterations: 160, anchorStrength: 0 },
-  collisionBoxes,
-);
-assert.ok(
-  Math.abs(separatedPositions.get('a').x - separatedPositions.get('b').x) >= 78 ||
-    Math.abs(separatedPositions.get('a').y - separatedPositions.get('b').y) >= 39.9,
-);
+assert.equal(strongSpring.score, 0.9);
+assert.ok(strongSpring.idealLength < weakerSpring.idealLength);
+assert.ok(strongSpring.elasticity > weakerSpring.elasticity);
 
 console.log('layout.test.mjs: all passed');

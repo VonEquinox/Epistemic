@@ -9,7 +9,6 @@ import {
   aspectNeighborMap,
   buildLayoutSprings,
   combineNeighbors,
-  refineNearestNeighborPositions,
   seedPosition,
   topNeighborMap,
   unconnectedNodes,
@@ -104,54 +103,6 @@ const FCOSE_SPREAD = {
   idealDefault: 420,
 };
 
-function estimatedLabelWidth(label: string): number {
-  const width = [...label].reduce((total, character) => {
-    if (/\s/.test(character)) return total + 2.5;
-    if (/[\u2e80-\u9fff]/.test(character)) return total + 8;
-    return total + 4.5;
-  }, 0);
-  return Math.min(110, Math.max(13, width));
-}
-
-function refineGlobalLayout(
-  cy: Core,
-  scores: Map<string, Map<string, number>>,
-) {
-  const movableNodes = cy.nodes().filter((node) => !node.locked());
-  const positions = new Map<string, { x: number; y: number }>();
-  const collisionBounds = new Map<
-    string,
-    { left: number; right: number; top: number; bottom: number }
-  >();
-  movableNodes.forEach((element) => {
-    const node = element as cytoscape.NodeSingular;
-    const position = node.position();
-    const box = node.boundingBox({ includeLabels: true, includeOverlays: false });
-    const labelWidth = estimatedLabelWidth(String(node.data('label') ?? ''));
-    const halfWidth = labelWidth / 2;
-    positions.set(node.id(), { ...position });
-    collisionBounds.set(node.id(), {
-      left: Math.min(box.x1 - position.x, -halfWidth),
-      right: Math.max(box.x2 - position.x, halfWidth),
-      top: Math.min(box.y1 - position.y, -9),
-      bottom: Math.max(box.y2 - position.y, 24),
-    });
-  });
-  const refined = refineNearestNeighborPositions(
-    positions,
-    scores,
-    {},
-    collisionBounds,
-  );
-  cy.batch(() => {
-    movableNodes.forEach((element) => {
-      const node = element as cytoscape.NodeSingular;
-      const position = refined.get(node.id());
-      if (position) node.position(position);
-    });
-  });
-}
-
 export function MapView({
   data,
   onSelect,
@@ -243,8 +194,6 @@ export function MapView({
           target: spring.targetId,
           weight: spring.score,
           score: spring.score,
-          primary: spring.primary,
-          bestRank: spring.bestRank,
           idealEdgeLength: spring.idealLength,
           edgeElasticity: spring.elasticity,
           type: 'layout_spring',
@@ -419,11 +368,6 @@ export function MapView({
       hideEdgesOnViewport: true,
     });
 
-    // fCoSE creates the global clusters; this ordinal pass fixes local cases
-    // where a weaker node accidentally ends up closer than the strongest one.
-    refineGlobalLayout(cy, layoutMap);
-    cy.fit(cy.nodes(), 40);
-
     // Add denser visual edges *after* fcose so they don't act as springs.
     if (visualEdges.length > 0) {
       cy.add(visualEdges);
@@ -567,8 +511,6 @@ export function MapView({
             target: spring.targetId,
             weight: spring.score,
             score: spring.score,
-            primary: spring.primary,
-            bestRank: spring.bestRank,
             idealEdgeLength: spring.idealLength,
             edgeElasticity: spring.elasticity,
             type: 'layout_spring',
@@ -576,10 +518,6 @@ export function MapView({
           classes: 'layout-spring',
         })),
       );
-    });
-    cy.one('layoutstop', () => {
-      refineGlobalLayout(cy, layoutMap);
-      cy.fit(cy.nodes(), 40);
     });
     cy.layout({
       name: 'fcose',
