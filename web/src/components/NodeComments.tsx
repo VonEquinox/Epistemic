@@ -53,8 +53,8 @@ export function NodeComments({ graphId, workId }: { graphId: string | null; work
   if (!graphId) {
     return (
       <section className="mt-6 space-y-2">
-        <h2 className="font-medium text-ink-800 text-sm">成员评论</h2>
-        <p className="text-xs text-ink-400">请从研究图打开这篇论文，再留下组内评论。</p>
+        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1">成员评论</h2>
+        <p className="text-xs text-on-surface-variant">请从研究图打开这篇论文，再留下组内评论。</p>
       </section>
     );
   }
@@ -93,57 +93,63 @@ export function NodeComments({ graphId, workId }: { graphId: string | null; work
 
   return (
     <section className="mt-6 space-y-3">
-      <div className="flex items-center gap-2">
-        <h2 className="font-medium text-ink-800 text-sm">
+      <div className="flex items-baseline gap-2 border-b border-outline-variant pb-1">
+        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase">
           成员评论{comments ? ` (${comments.length})` : ''}
         </h2>
-        {graph && <span className="text-[11px] text-ink-400 truncate">{graph.name}</span>}
+        {graph && <span className="text-[11px] text-on-surface-variant truncate">{graph.name}</span>}
       </div>
 
-      <div className="rounded-md border border-ink-200 bg-ink-50 p-3 space-y-2">
+      <div className="md-card-filled p-3 space-y-2">
         <textarea
           rows={3}
           value={body}
           onChange={(event) => setBody(event.target.value)}
           placeholder="留下评论、idea、思考或 review…"
-          className="w-full resize-y rounded border border-ink-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+          className="md-field w-full resize-y"
         />
-        <div className="flex items-center gap-2">
-          <select
-            value={kind}
-            onChange={(event) => setKind(event.target.value as CommentKind)}
-            className="rounded border border-ink-200 bg-white px-2 py-1 text-xs"
+        <div className="flex flex-wrap items-center gap-1.5">
+          {KIND_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setKind(option.value)}
+              className={`md-chip ${kind === option.value ? 'md-chip-selected' : ''}`}
+            >
+              {option.label}
+            </button>
+          ))}
+          <span className="mx-1 h-4 w-px bg-outline-variant" />
+          <button
+            type="button"
+            onClick={() => setVisibility('team')}
+            className={`md-chip ${visibility === 'team' ? 'md-chip-selected' : ''}`}
           >
-            {KIND_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={visibility}
-            onChange={(event) => setVisibility(event.target.value as Visibility)}
-            className="rounded border border-ink-200 bg-white px-2 py-1 text-xs"
+            组内可见
+          </button>
+          <button
+            type="button"
+            onClick={() => setVisibility('private')}
+            className={`md-chip ${visibility === 'private' ? 'md-chip-selected' : ''}`}
           >
-            <option value="team">组内可见</option>
-            <option value="private">仅自己</option>
-          </select>
+            仅自己
+          </button>
           <button
             type="button"
             disabled={!body.trim() || createComment.isPending}
             onClick={submit}
-            className="ml-auto rounded bg-ink-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+            className="ml-auto md-btn-filled md-btn-sm"
           >
             {createComment.isPending ? '发布中…' : '发布'}
           </button>
         </div>
       </div>
 
-      {isLoading && <p className="text-xs text-ink-400">加载评论…</p>}
-      {error && <p className="text-xs text-rose-600">{(error as Error).message}</p>}
-      {mutationError && <p className="text-xs text-rose-600">{mutationError.message}</p>}
+      {isLoading && <p className="text-xs text-on-surface-variant">加载评论…</p>}
+      {error && <p className="text-xs text-error">{(error as Error).message}</p>}
+      {mutationError && <p className="text-xs text-error">{mutationError.message}</p>}
       {!isLoading && roots.length === 0 && (
-        <p className="text-xs text-ink-400">这篇论文在当前图中还没有成员评论。</p>
+        <p className="text-xs text-on-surface-variant">这篇论文在当前图中还没有成员评论。</p>
       )}
 
       {roots.map((comment) => (
@@ -227,10 +233,10 @@ function CommentCard({
   const edited = comment.updated_at !== comment.created_at;
 
   return (
-    <div className="rounded-md border border-ink-100 p-3 text-sm space-y-2">
-      <div className="flex items-center gap-1.5 text-xs text-ink-400">
-        <span className="font-medium text-ink-700">{comment.author_name}</span>
-        <span className="rounded bg-ink-100 px-1.5 py-0.5 text-ink-600">
+    <div className="bg-surface-container-low rounded-xl p-3 text-sm space-y-2">
+      <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+        <span className="font-medium text-on-surface">{comment.author_name}</span>
+        <span className="rounded-md bg-surface-container-high px-1.5 py-0.5 text-on-surface-variant">
           {KIND_LABEL[comment.kind] ?? comment.kind}
         </span>
         {comment.visibility === 'private' && <span>仅自己</span>}
@@ -245,49 +251,51 @@ function CommentCard({
             rows={3}
             value={editingBody}
             onChange={(event) => onEditingBody(event.target.value)}
-            className="w-full rounded border border-ink-200 px-2 py-1.5 text-sm"
+            className="md-field w-full resize-y"
             autoFocus
           />
-          <div className="flex gap-2 text-xs">
-            <button disabled={pending || !editingBody.trim()} onClick={() => onSaveEdit(comment)} className="text-accent disabled:opacity-50">保存</button>
-            <button onClick={onCancelEdit} className="text-ink-400">取消</button>
+          <div className="flex gap-1.5">
+            <button disabled={pending || !editingBody.trim()} onClick={() => onSaveEdit(comment)} className="md-btn-filled md-btn-sm">保存</button>
+            <button onClick={onCancelEdit} className="md-btn-text md-btn-sm">取消</button>
           </div>
         </div>
       ) : (
-        <p className="whitespace-pre-wrap text-ink-800">{comment.body}</p>
+        <p className="whitespace-pre-wrap text-on-surface">{comment.body}</p>
       )}
 
       {!editing && (
-        <div className="flex gap-3 text-xs">
-          <button onClick={() => onReply(comment)} className="text-ink-500 hover:text-accent">回复</button>
-          {own && <button onClick={() => onEdit(comment)} className="text-ink-500 hover:text-accent">编辑</button>}
-          {own && <button onClick={() => onDelete(comment)} className="text-rose-500 hover:text-rose-700">删除</button>}
+        <div className="flex gap-1">
+          <button onClick={() => onReply(comment)} className="md-btn-text md-btn-sm">回复</button>
+          {own && <button onClick={() => onEdit(comment)} className="md-btn-text md-btn-sm">编辑</button>}
+          {own && <button onClick={() => onDelete(comment)} className="md-btn-text md-btn-sm text-error">删除</button>}
         </div>
       )}
 
       {replies.length > 0 && (
-        <div className="ml-3 space-y-2 border-l-2 border-ink-100 pl-3">
+        <div className="ml-1 space-y-2 border-l-2 border-outline-variant pl-3">
           {replies.map((reply) => {
             const replyOwn = reply.user_id === myUserId;
             return (
               <div key={reply.id} className="text-xs space-y-1">
-                <div className="flex gap-1.5 text-ink-400">
-                  <span className="font-medium text-ink-600">{reply.author_name}</span>
+                <div className="flex gap-1.5 text-on-surface-variant">
+                  <span className="font-medium text-on-surface">{reply.author_name}</span>
                   <span>{new Date(reply.updated_at).toLocaleString()}</span>
                 </div>
                 {editingId === reply.id ? (
                   <div className="space-y-1">
-                    <textarea rows={2} value={editingBody} onChange={(event) => onEditingBody(event.target.value)} className="w-full rounded border border-ink-200 px-2 py-1" />
-                    <button disabled={pending || !editingBody.trim()} onClick={() => onSaveEdit(reply)} className="mr-2 text-accent">保存</button>
-                    <button onClick={onCancelEdit} className="text-ink-400">取消</button>
+                    <textarea rows={2} value={editingBody} onChange={(event) => onEditingBody(event.target.value)} className="md-field w-full resize-y" />
+                    <div className="flex gap-1.5">
+                      <button disabled={pending || !editingBody.trim()} onClick={() => onSaveEdit(reply)} className="md-btn-filled md-btn-sm">保存</button>
+                      <button onClick={onCancelEdit} className="md-btn-text md-btn-sm">取消</button>
+                    </div>
                   </div>
                 ) : (
-                  <p className="whitespace-pre-wrap text-ink-700">{reply.body}</p>
+                  <p className="whitespace-pre-wrap text-on-surface-variant">{reply.body}</p>
                 )}
                 {replyOwn && editingId !== reply.id && (
-                  <div className="flex gap-2">
-                    <button onClick={() => onEdit(reply)} className="text-ink-400 hover:text-accent">编辑</button>
-                    <button onClick={() => onDelete(reply)} className="text-rose-400 hover:text-rose-600">删除</button>
+                  <div className="flex gap-1">
+                    <button onClick={() => onEdit(reply)} className="md-btn-text md-btn-sm">编辑</button>
+                    <button onClick={() => onDelete(reply)} className="md-btn-text md-btn-sm text-error">删除</button>
                   </div>
                 )}
               </div>
@@ -303,12 +311,12 @@ function CommentCard({
             value={replyBody}
             onChange={(event) => onReplyBody(event.target.value)}
             placeholder="回复这条评论…"
-            className="w-full rounded border border-ink-200 px-2 py-1 text-xs"
+            className="md-field w-full resize-y"
             autoFocus
           />
-          <div className="flex gap-2 text-xs">
-            <button disabled={pending || !replyBody.trim()} onClick={() => onSubmitReply(comment)} className="text-accent disabled:opacity-50">发送</button>
-            <button onClick={onCancelReply} className="text-ink-400">取消</button>
+          <div className="flex gap-1.5">
+            <button disabled={pending || !replyBody.trim()} onClick={() => onSubmitReply(comment)} className="md-btn-filled md-btn-sm">发送</button>
+            <button onClick={onCancelReply} className="md-btn-text md-btn-sm">取消</button>
           </div>
         </div>
       )}

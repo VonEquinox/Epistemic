@@ -18,34 +18,34 @@ export function Drawer() {
   if (!open || !id) return null;
 
   return (
-    <aside className="absolute right-0 top-0 bottom-0 w-[420px] bg-white border-l border-ink-200 shadow-xl z-20 flex flex-col">
-      <div className="h-12 flex items-center justify-between px-4 border-b border-ink-100">
-        <span className="text-sm font-medium text-ink-700">论文卡片</span>
-        <div className="flex gap-2">
+    <aside className="absolute right-0 top-0 bottom-0 w-[420px] bg-surface-container-lowest border-l border-outline-variant shadow-elev3 rounded-l-2xl z-20 flex flex-col">
+      <div className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-outline-variant">
+        <span className="text-sm font-medium text-on-surface">论文卡片</span>
+        <div className="flex items-center gap-2">
           <Link
             to={detailHref}
-            className="text-xs text-accent hover:underline"
+            className="text-xs text-primary hover:underline"
           >
             全页
           </Link>
           <Link
             to={`/ego/work/${id}`}
-            className="text-xs text-accent hover:underline"
+            className="text-xs text-primary hover:underline"
           >
             Ego
           </Link>
           <button
-            className="text-ink-400 hover:text-ink-800 text-sm"
+            className="md-icon-btn"
             onClick={() => selectWork(null)}
           >
-            ✕
+            ×
           </button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        {isLoading && <p className="text-ink-500 text-sm">加载中…</p>}
+        {isLoading && <p className="text-on-surface-variant text-sm">加载中…</p>}
         {error && (
-          <p className="text-rose-600 text-sm">{(error as Error).message}</p>
+          <p className="text-error text-sm">{(error as Error).message}</p>
         )}
         {data && (
           <>

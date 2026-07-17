@@ -10,6 +10,7 @@ import {
   useSavedViews,
 } from '../api/hooks';
 import { MapView } from '../graph/MapView';
+import { MapLegend } from '../graph/MapLegend';
 import { ASPECTS } from '../graph/aspects';
 import { Drawer } from '../components/Drawer';
 import { useUiStore } from '../stores/ui';
@@ -62,26 +63,31 @@ export function MapPage() {
       ? '图'
       : '全库地图';
 
+  const lodLabel = lod === 'far' ? '远景' : lod === 'mid' ? '中景' : '近景';
+
   return (
     <div className="h-full relative flex flex-col">
-      <div className="border-b border-ink-100 bg-white px-4 py-2 flex flex-col gap-2 text-xs text-ink-600">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="font-medium text-ink-800">地图</span>
-          <span className="text-ink-500 truncate max-w-[14rem]" title={scopeLabel}>
-            {scopeLabel}
+      <div className="border-b border-outline-variant bg-surface-container-low px-4 py-2.5 flex flex-col gap-2 text-xs text-on-surface-variant">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <span className="text-sm font-medium text-on-surface">地图</span>
+          <span
+            className="md-chip-static max-w-[15rem]"
+            title={scopeLabel}
+          >
+            <span className="truncate">{scopeLabel}</span>
           </span>
-          <span className="text-ink-400">LOD: {lod}</span>
-          {data && (
-            <span className="text-ink-400">{data.nodes.length} 节点</span>
-          )}
+          <span className="md-chip-static tabular-nums">
+            {lodLabel}
+            {data ? ` · ${data.nodes.length} 节点` : ''}
+          </span>
 
-          <Link to="/groups" className="text-accent hover:underline">
+          <Link to="/groups" className="md-btn-text md-btn-sm">
             切换组/图
           </Link>
           {graphId && (
             <button
               type="button"
-              className="text-ink-400 hover:underline"
+              className="md-btn-text md-btn-sm text-on-surface-variant"
               onClick={() => {
                 setActiveGraphId(null);
                 setParams({});
@@ -92,51 +98,56 @@ export function MapPage() {
           )}
 
           {!graphId && groups && groups.length > 0 && (
-            <span className="text-amber-700">
+            <span className="inline-flex items-center h-7 px-3 rounded-lg bg-tertiary-container text-on-tertiary-container">
               当前为全库；可从
-              <Link to="/groups" className="underline ml-0.5">
+              <Link to="/groups" className="underline mx-0.5 font-medium">
                 研究组
               </Link>
               打开某张图
             </span>
           )}
 
-          <div className="flex items-center gap-1 flex-wrap">
-            <span className="text-ink-500 shrink-0">分析层</span>
+          <button
+            type="button"
+            className="md-btn-text md-btn-sm ml-auto"
+            onClick={() => setShowAdvanced((v) => !v)}
+          >
+            {showAdvanced ? '收起高级' : '高级'}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-on-surface-variant shrink-0">分析层</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
             {ASPECTS.map((a) => {
               const on = activeAspect === a.key;
               return (
                 <button
                   key={a.key}
                   type="button"
-                  className={
-                    on
-                      ? 'px-2 py-0.5 rounded bg-ink-800 text-white'
-                      : 'px-2 py-0.5 rounded border border-ink-200 hover:bg-ink-50'
-                  }
+                  className={`md-chip ${on ? 'md-chip-selected' : ''}`}
                   onClick={() => setActiveAspect(a.key)}
                 >
+                  {on && <span aria-hidden>✓</span>}
                   {a.label}
                 </button>
               );
             })}
             <button
               type="button"
-              className={
-                activeAspect === null
-                  ? 'px-2 py-0.5 rounded bg-ink-800 text-white'
-                  : 'px-2 py-0.5 rounded border border-ink-200 hover:bg-ink-50'
-              }
+              className={`md-chip ${activeAspect === null ? 'md-chip-selected' : ''}`}
               onClick={() => setActiveAspect(null)}
               title="引用耦合 + 方法谱系综合布局，不画相似边"
             >
+              {activeAspect === null && <span aria-hidden>✓</span>}
               综合布局
             </button>
           </div>
 
-          <label className="flex items-center gap-1 ml-1">
+          <label className="flex items-center gap-2 ml-2 border-l border-outline-variant pl-3 cursor-pointer">
             <input
               type="checkbox"
+              className="md-switch"
               checked={showAssertionEdges}
               onChange={(e) => setShowAssertionEdges(e.target.checked)}
             />
@@ -145,10 +156,10 @@ export function MapPage() {
 
           {activeAspect && (
             <label
-              className="flex items-center gap-2 ml-1 border-l border-ink-100 pl-3"
+              className="flex items-center gap-2 ml-1 border-l border-outline-variant pl-3"
               title="只显示余弦相似度 ≥ 阈值的边。分数越高越相关/越近。"
             >
-              <span className="text-ink-500 shrink-0">相关度 ≥</span>
+              <span className="text-on-surface-variant shrink-0">相关度 ≥</span>
               <input
                 type="range"
                 min={0.25}
@@ -156,23 +167,15 @@ export function MapPage() {
                 step={0.01}
                 value={minSimScore}
                 onChange={(e) => setMinSimScore(Number(e.target.value))}
-                className="w-28 accent-ink-800"
+                className="w-28"
               />
-              <span className="tabular-nums font-medium text-ink-800 w-10">
+              <span className="tabular-nums font-medium text-on-surface w-10">
                 {minSimScore.toFixed(2)}
               </span>
             </label>
           )}
 
-          <button
-            type="button"
-            className="text-ink-400 hover:underline"
-            onClick={() => setShowAdvanced((v) => !v)}
-          >
-            {showAdvanced ? '收起高级' : '高级'}
-          </button>
-
-          <span className="ml-auto text-ink-400">
+          <span className="ml-auto text-outline hidden lg:inline">
             {activeAspect
               ? '相似边实时按相关度过滤 · 悬停显示分数'
               : '综合布局 · 相似不画边 · 近景可开断言边'}
@@ -180,8 +183,8 @@ export function MapPage() {
         </div>
 
         {showAdvanced && (
-          <div className="flex items-center gap-4 flex-wrap border-t border-ink-50 pt-2">
-            <label className="flex items-center gap-1">
+          <div className="flex items-center gap-4 flex-wrap border-t border-outline-variant pt-2.5">
+            <label className="flex items-center gap-2">
               引用耦合
               <input
                 type="range"
@@ -194,7 +197,7 @@ export function MapPage() {
                 }
               />
             </label>
-            <label className="flex items-center gap-1">
+            <label className="flex items-center gap-2">
               方法谱系
               <input
                 type="range"
@@ -207,19 +210,20 @@ export function MapPage() {
                 }
               />
             </label>
-            <label className="flex items-center gap-1">
+            <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
+                className="md-switch"
                 checked={topicEnabled}
                 onChange={(e) => setTopicEnabled(e.target.checked)}
               />
               旧主题引力
             </label>
 
-            <div className="flex items-center gap-1 ml-2 border-l border-ink-100 pl-3">
-              <span className="text-ink-400">视角</span>
+            <div className="flex items-center gap-2 ml-2 border-l border-outline-variant pl-3">
+              <span className="text-on-surface-variant">视角</span>
               <select
-                className="border border-ink-200 rounded px-1 max-w-[9rem]"
+                className="md-field max-w-[9rem]"
                 defaultValue=""
                 onChange={(e) => {
                   const v = views?.find((x) => x.id === e.target.value);
@@ -240,14 +244,14 @@ export function MapPage() {
                 ))}
               </select>
               <input
-                className="border border-ink-200 rounded px-1 w-24"
+                className="md-field w-24"
                 placeholder="命名"
                 value={viewName}
                 onChange={(e) => setViewName(e.target.value)}
               />
               <button
                 type="button"
-                className="px-2 py-0.5 rounded bg-ink-800 text-white disabled:opacity-40"
+                className="md-btn-filled md-btn-sm"
                 disabled={!viewName.trim() || createView.isPending}
                 onClick={() =>
                   createView.mutate(
@@ -261,7 +265,7 @@ export function MapPage() {
               {views && views.length > 0 && (
                 <button
                   type="button"
-                  className="text-rose-500 hover:underline"
+                  className="md-btn-text md-btn-sm text-error"
                   onClick={() => {
                     const last = views[views.length - 1];
                     if (last && confirm(`删除视角「${last.name}」？`)) {
@@ -276,10 +280,12 @@ export function MapPage() {
           </div>
         )}
       </div>
-      <div className="flex-1 min-h-0 p-3">
-        {isLoading && <p className="text-sm text-ink-500 p-4">加载地图…</p>}
+      <div className="flex-1 min-h-0 p-3 relative">
+        {isLoading && (
+          <p className="text-sm text-on-surface-variant p-4">加载地图…</p>
+        )}
         {error && (
-          <p className="text-sm text-rose-600 p-4">{(error as Error).message}</p>
+          <p className="text-sm text-error p-4">{(error as Error).message}</p>
         )}
         {data && (
           <MapView
@@ -290,6 +296,7 @@ export function MapPage() {
             onSelectEdge={(rid) => nav(`/review?focus=${rid}`)}
           />
         )}
+        {data && <MapLegend showSimilarity={!!activeAspect} />}
       </div>
       <Drawer />
     </div>

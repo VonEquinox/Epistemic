@@ -77,8 +77,8 @@ export function PaperDetailPage() {
     }
   }, [sp]);
 
-  if (isLoading) return <p className="p-6 text-ink-500">加载中…</p>;
-  if (error) return <p className="p-6 text-rose-600">{(error as Error).message}</p>;
+  if (isLoading) return <p className="p-6 text-on-surface-variant">加载中…</p>;
+  if (error) return <p className="p-6 text-error">{(error as Error).message}</p>;
   if (!data) return null;
 
   const submitReply = (parentId: string) => {
@@ -102,7 +102,7 @@ export function PaperDetailPage() {
 
   return (
     <div className="h-[calc(100vh-3rem)] flex min-h-0">
-      <div className="w-[420px] shrink-0 border-r border-ink-200 overflow-y-auto p-5 bg-white">
+      <div className="w-[420px] shrink-0 border-r border-outline-variant overflow-y-auto p-5 bg-surface">
         <PaperCard
           card={data}
           onJumpEvidence={(ev) => {
@@ -119,11 +119,11 @@ export function PaperDetailPage() {
         <NodeComments graphId={graphId} workId={data.work.id} />
 
         <section className="mt-6 space-y-3">
-          <h2 className="font-medium text-ink-800 text-sm">
+          <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1">
             PDF 批注{anns ? ` (${anns.length})` : ''}
           </h2>
           {roots.length === 0 && (
-            <p className="text-xs text-ink-400">
+            <p className="text-xs text-on-surface-variant">
               暂无批注。在 PDF 中划选文字可添加。
             </p>
           )}
@@ -232,36 +232,37 @@ function AnnotationItem({
 }) {
   const anchor = ann.anchor as { page?: number; text?: string } | null | undefined;
   return (
-    <div className="border border-ink-100 rounded-md p-3 text-sm space-y-2">
-      <div className="flex items-center gap-1.5 text-xs text-ink-400 flex-wrap">
-        <span className="px-1.5 py-0.5 rounded bg-ink-100 text-ink-700">
+    <div className="bg-surface-container-low rounded-xl p-3 text-sm space-y-2">
+      <div className="flex items-center gap-1.5 text-xs text-on-surface-variant flex-wrap">
+        <span className="px-1.5 py-0.5 rounded-md bg-surface-container-high text-on-surface-variant">
           {KIND_LABEL[ann.kind] ?? ann.kind}
         </span>
-        <span className="px-1.5 py-0.5 rounded bg-ink-50 text-ink-500">
+        <span className="px-1.5 py-0.5 rounded-md bg-surface-container text-on-surface-variant">
           {VIS_LABEL[ann.visibility] ?? ann.visibility}
         </span>
         <span className="ml-auto">{new Date(ann.created_at).toLocaleString()}</span>
       </div>
-      <p className="text-ink-800 whitespace-pre-wrap">{ann.body}</p>
+      <p className="text-on-surface whitespace-pre-wrap">{ann.body}</p>
       {anchor?.page != null && (
         <button
           type="button"
-          className="text-xs text-accent hover:underline"
+          className="text-xs text-primary hover:underline"
           onClick={onJump}
         >
           定位 p.{anchor.page}
           {anchor.text ? `：${anchor.text.slice(0, 40)}${anchor.text.length > 40 ? '…' : ''}` : ''}
+          {' ↗'}
         </button>
       )}
       {replies.length > 0 && (
-        <div className="ml-3 border-l-2 border-ink-100 pl-3 space-y-2">
+        <div className="ml-1 border-l-2 border-outline-variant pl-3 space-y-2">
           {replies.map((r) => (
             <div key={r.id} className="text-xs">
-              <div className="text-ink-400 mb-0.5">
+              <div className="text-on-surface-variant mb-0.5">
                 {KIND_LABEL[r.kind] ?? r.kind} ·{' '}
                 {new Date(r.created_at).toLocaleString()}
               </div>
-              <p className="text-ink-700 whitespace-pre-wrap">{r.body}</p>
+              <p className="text-on-surface whitespace-pre-wrap">{r.body}</p>
             </div>
           ))}
         </div>
@@ -269,7 +270,7 @@ function AnnotationItem({
       {!replying ? (
         <button
           type="button"
-          className="text-xs text-ink-500 hover:text-accent"
+          className="md-btn-text md-btn-sm"
           onClick={onStartReply}
         >
           回复
@@ -277,7 +278,7 @@ function AnnotationItem({
       ) : (
         <div className="space-y-1.5">
           <textarea
-            className="w-full border border-ink-200 rounded px-2 py-1 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+            className="md-field w-full resize-none"
             rows={2}
             value={replyBody}
             onChange={(e) => onChangeReply(e.target.value)}
@@ -288,14 +289,14 @@ function AnnotationItem({
             <button
               type="button"
               disabled={replyPending || !replyBody.trim()}
-              className="px-2 py-0.5 rounded bg-ink-900 text-white text-xs disabled:opacity-50"
+              className="md-btn-filled md-btn-sm"
               onClick={onSubmitReply}
             >
               {replyPending ? '发送中…' : '发送'}
             </button>
             <button
               type="button"
-              className="px-2 py-0.5 rounded border border-ink-200 text-xs text-ink-500"
+              className="md-btn-text md-btn-sm"
               onClick={onCancelReply}
             >
               取消

@@ -250,8 +250,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       <div
         className={`flex flex-col items-center justify-center gap-3 p-6 text-sm ${className ?? ''}`}
       >
-        <p className="text-ink-500">尚未上传 PDF</p>
-        <label className="px-3 py-2 rounded-md bg-ink-900 text-white text-xs cursor-pointer">
+        <p className="text-on-surface-variant">尚未上传 PDF</p>
+        <label className="md-btn-filled md-btn-sm cursor-pointer">
           上传 PDF
           <input
             type="file"
@@ -260,19 +260,19 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
             onChange={(e) => onFile(e.target.files?.[0] ?? null)}
           />
         </label>
-        {error && <p className="text-rose-600 text-xs">{error}</p>}
+        {error && <p className="text-error text-xs">{error}</p>}
       </div>
     );
   }
 
   return (
     <div className={`flex flex-col min-h-0 ${className ?? ''}`}>
-      <div className="h-9 border-b border-ink-100 px-3 flex items-center gap-3 text-xs text-ink-500 bg-white">
+      <div className="h-9 border-b border-outline-variant px-3 flex items-center gap-3 text-xs text-on-surface-variant bg-surface-container-low">
         <span>PDF</span>
         {numPages > 0 && <span>{numPages} 页</span>}
         {loading && <span>加载中…</span>}
-        {error && <span className="text-rose-600">{error}</span>}
-        <label className="ml-auto text-accent cursor-pointer hover:underline">
+        {error && <span className="text-error">{error}</span>}
+        <label className="ml-auto text-primary cursor-pointer hover:underline">
           替换
           <input
             type="file"
@@ -284,7 +284,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       </div>
       <div
         ref={containerRef}
-        className="relative flex-1 overflow-y-auto bg-ink-100 p-3 space-y-4"
+        className="relative flex-1 overflow-y-auto bg-surface-container p-3 space-y-4"
         onScroll={() => {
           /* keep bubble fixed to content via scroll offsets already baked in */
         }}
@@ -308,7 +308,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
         {bubble && (
           <div
-            className="absolute z-30 w-[268px] rounded-lg border border-ink-200 bg-white shadow-lg p-3 text-xs space-y-2"
+            className="absolute z-30 w-[268px] md-card shadow-elev3 p-3 text-xs space-y-2"
             style={{ left: bubble.left, top: bubble.top }}
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -321,16 +321,12 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
             </p>
 
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-ink-400">类型</span>
+              <span className="text-on-surface-variant">类型</span>
               {KIND_OPTS.map((k) => (
                 <button
                   key={k.value}
                   type="button"
-                  className={`px-2 py-0.5 rounded border ${
-                    kind === k.value
-                      ? 'bg-ink-900 text-white border-ink-900'
-                      : 'border-ink-200 text-ink-600 hover:border-ink-400'
-                  }`}
+                  className={`md-chip ${kind === k.value ? 'md-chip-selected' : ''}`}
                   onClick={() => setKind(k.value)}
                 >
                   {k.label}
@@ -339,16 +335,12 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-ink-400">可见</span>
+              <span className="text-on-surface-variant">可见</span>
               {VIS_OPTS.map((v) => (
                 <button
                   key={v.value}
                   type="button"
-                  className={`px-2 py-0.5 rounded border ${
-                    visibility === v.value
-                      ? 'bg-accent text-white border-accent'
-                      : 'border-ink-200 text-ink-600 hover:border-ink-400'
-                  }`}
+                  className={`md-chip ${visibility === v.value ? 'md-chip-selected' : ''}`}
                   onClick={() => setVisibility(v.value)}
                 >
                   {v.label}
@@ -357,7 +349,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
             </div>
 
             <textarea
-              className="w-full border border-ink-200 rounded px-2 py-1 text-xs text-ink-800 resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+              className="md-field w-full text-xs resize-none"
               rows={2}
               value={noteBody}
               onChange={(e) => setNoteBody(e.target.value)}
@@ -369,7 +361,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                 <button
                   type="button"
                   disabled={annotationPending || !noteBody.trim()}
-                  className="px-2 py-1 rounded bg-ink-900 text-white disabled:opacity-50"
+                  className="md-btn-filled md-btn-sm"
                   onClick={async () => {
                     await onAddAnnotation({
                       text: bubble.sel.text,
@@ -389,7 +381,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                 <button
                   type="button"
                   disabled={promotePending}
-                  className="px-2 py-1 rounded border border-accent text-accent hover:bg-accent-soft disabled:opacity-50"
+                  className="md-btn-outlined md-btn-sm"
                   onClick={async () => {
                     await onPromoteClaim(bubble.sel);
                     dismissBubble();
@@ -606,7 +598,7 @@ function PdfPage({
       onMouseUp={handleMouseUp}
       data-page={pageNumber}
     >
-      <div className="absolute left-2 top-2 z-20 text-[10px] bg-ink-900/70 text-white px-1.5 py-0.5 rounded pointer-events-none">
+      <div className="absolute left-2 top-2 z-20 text-[10px] bg-[rgba(46,48,54,0.82)] text-[#f0f0f7] px-1.5 py-0.5 rounded-md pointer-events-none">
         p.{pageNumber}
       </div>
       <canvas ref={canvasRef} className="block" />

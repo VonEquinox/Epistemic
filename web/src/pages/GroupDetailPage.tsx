@@ -18,31 +18,33 @@ export function GroupDetailPage() {
   const [desc, setDesc] = useState('');
 
   if (isLoading) {
-    return <p className="p-6 text-sm text-ink-400">加载…</p>;
+    return <p className="p-6 text-sm text-on-surface-variant">加载…</p>;
   }
   if (!group) {
-    return <p className="p-6 text-sm text-rose-600">组不存在或无权访问</p>;
+    return <p className="p-6 text-sm text-error">组不存在或无权访问</p>;
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
+    <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-6">
       <div>
-        <Link to="/groups" className="text-sm text-ink-500 hover:text-ink-800">
+        <Link to="/groups" className="md-btn-text md-btn-sm -ml-3">
           ← 全部组
         </Link>
-        <h1 className="text-xl font-semibold text-ink-900 mt-2">{group.name}</h1>
+        <h1 className="text-xl font-medium text-on-surface mt-2">{group.name}</h1>
         {group.description && (
-          <p className="text-sm text-ink-500 mt-1">{group.description}</p>
+          <p className="text-sm text-on-surface-variant mt-1">{group.description}</p>
         )}
-        <p className="text-xs text-ink-400 mt-1">
-          你的角色：{group.my_role} · {group.member_count} 成员 · {group.graph_count} 图
-        </p>
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+          <span className="md-chip-static">你的角色：{group.my_role}</span>
+          <span className="md-chip-static">{group.member_count} 成员</span>
+          <span className="md-chip-static">{group.graph_count} 图</span>
+        </div>
       </div>
 
       <section>
-        <h2 className="font-medium text-ink-800 mb-2">图（地图工作区）</h2>
+        <h2 className="text-sm font-medium text-on-surface mb-2">图（地图工作区）</h2>
         <form
-          className="flex flex-wrap gap-2 items-end mb-3"
+          className="flex flex-wrap gap-2 items-center mb-3"
           onSubmit={(e) => {
             e.preventDefault();
             if (!name.trim() || !id) return;
@@ -58,13 +60,13 @@ export function GroupDetailPage() {
           }}
         >
           <input
-            className="border border-ink-200 rounded px-2 py-1 text-sm w-40"
+            className="md-field w-40"
             placeholder="新图名称"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <input
-            className="border border-ink-200 rounded px-2 py-1 text-sm w-48"
+            className="md-field w-48"
             placeholder="说明（可选）"
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
@@ -72,7 +74,7 @@ export function GroupDetailPage() {
           <button
             type="submit"
             disabled={!name.trim() || createGraph.isPending}
-            className="px-3 py-1 rounded bg-ink-800 text-white text-sm disabled:opacity-40"
+            className="md-btn-filled"
           >
             新建图
           </button>
@@ -83,19 +85,19 @@ export function GroupDetailPage() {
             <GraphRow key={g.id} graph={g} groupId={group.id} />
           ))}
           {graphs && graphs.length === 0 && (
-            <p className="text-sm text-ink-400">还没有图，先新建一张。</p>
+            <p className="text-sm text-on-surface-variant">还没有图，先新建一张。</p>
           )}
         </ul>
       </section>
 
       <section>
-        <h2 className="font-medium text-ink-800 mb-2">成员</h2>
-        <ul className="text-sm text-ink-700 space-y-1">
+        <h2 className="text-sm font-medium text-on-surface mb-2">成员</h2>
+        <ul className="md-card-outlined divide-y divide-outline-variant text-sm">
           {(members ?? []).map((m) => (
-            <li key={m.user_id} className="flex gap-3">
-              <span className="font-medium">{m.name}</span>
-              <span className="text-ink-400">{m.email}</span>
-              <span className="text-ink-400 ml-auto">{m.role}</span>
+            <li key={m.user_id} className="flex items-center gap-3 px-4 py-2.5">
+              <span className="font-medium text-on-surface">{m.name}</span>
+              <span className="text-on-surface-variant">{m.email}</span>
+              <span className="md-chip-static ml-auto">{m.role}</span>
             </li>
           ))}
         </ul>
@@ -113,17 +115,17 @@ function GraphRow({
 }) {
   const importLib = useImportLibraryToGraph(graph.id);
   return (
-    <li className="border border-ink-100 rounded-lg p-3 bg-white flex items-center gap-3">
+    <li className="md-card-outlined p-3 flex items-center gap-3 hover:shadow-elev1 transition-shadow">
       <div className="min-w-0 flex-1">
-        <div className="font-medium text-ink-900">{graph.name}</div>
+        <div className="font-medium text-on-surface">{graph.name}</div>
         {graph.description && (
-          <div className="text-xs text-ink-500">{graph.description}</div>
+          <div className="text-xs text-on-surface-variant">{graph.description}</div>
         )}
-        <div className="text-xs text-ink-400 mt-0.5">{graph.work_count} 篇论文</div>
+        <span className="md-chip-static mt-1.5">{graph.work_count} 篇论文</span>
       </div>
       <button
         type="button"
-        className="text-xs text-ink-500 hover:underline shrink-0"
+        className="md-btn-text md-btn-sm shrink-0"
         disabled={importLib.isPending}
         onClick={() => {
           if (confirm('将库内全部论文加入此图？')) importLib.mutate();
@@ -133,7 +135,7 @@ function GraphRow({
       </button>
       <Link
         to={`/map?group=${groupId}&graph=${graph.id}`}
-        className="px-3 py-1.5 rounded bg-ink-800 text-white text-sm shrink-0"
+        className="md-btn-tonal shrink-0"
       >
         打开地图
       </Link>

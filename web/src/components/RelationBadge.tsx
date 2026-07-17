@@ -15,11 +15,26 @@ const typeLabel: Record<RelationType, string> = {
   prerequisite_for: '前置阅读',
 };
 
+const typeCls: Record<RelationType, string> = {
+  uses_method_from: 'bg-primary-container text-on-primary-container',
+  improves_on: 'bg-primary-container text-on-primary-container',
+  alternative_to: 'bg-primary-container text-on-primary-container',
+  uses_dataset_from: 'bg-secondary-container text-on-secondary-container',
+  compares_against: 'bg-secondary-container text-on-secondary-container',
+  reproduces: 'bg-secondary-container text-on-secondary-container',
+  supports_claim: 'bg-tertiary-container text-on-tertiary-container',
+  fails_to_reproduce: 'bg-error-container text-on-error-container',
+  contradicts_claim: 'bg-error-container text-on-error-container',
+  prerequisite_for: 'bg-surface-container-high text-on-surface-variant',
+  cites: 'bg-surface-container-high text-on-surface-variant',
+  version_of: 'bg-surface-container-high text-on-surface-variant',
+};
+
 const statusCls: Record<ReviewStatus, string> = {
-  unreviewed: 'border-dashed border-ink-300 text-ink-500',
-  confirmed: 'border-solid border-blue-300 text-blue-700 bg-blue-50',
-  disputed: 'border-solid border-rose-400 text-rose-700 bg-rose-50',
-  rejected: 'border-solid border-ink-200 text-ink-400 line-through',
+  unreviewed: 'opacity-70',
+  confirmed: '',
+  disputed: 'ring-1 ring-error',
+  rejected: 'opacity-50 line-through',
 };
 
 export function RelationBadge({
@@ -31,7 +46,9 @@ export function RelationBadge({
 }) {
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${statusCls[status]}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        typeCls[type] ?? 'bg-surface-container-high text-on-surface-variant'
+      } ${statusCls[status]}`}
     >
       {typeLabel[type] ?? type}
     </span>

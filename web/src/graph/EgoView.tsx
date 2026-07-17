@@ -3,7 +3,7 @@ import cytoscape, { type Core } from 'cytoscape';
 // @ts-expect-error no types
 import fcose from 'cytoscape-fcose';
 import type { EgoResponse } from '../api/types';
-import { cyStylesheet } from './styles';
+import { COLORS, GRAPH_FONT, cyStylesheet } from './styles';
 import { bundleEdges, seedPosition } from './layout';
 
 cytoscape.use(fcose);
@@ -90,15 +90,16 @@ export function EgoView({ data, onSelectBundle, onSelectNode }: Props) {
         {
           selector: 'node.group',
           style: {
-            'background-color': '#e7e5e4',
-            'border-color': '#a8a29e',
-            'border-width': 2,
+            'background-color': COLORS.groupFill,
+            'border-color': COLORS.groupBorder,
+            'border-width': 1.5,
             'border-style': 'dashed',
             shape: 'round-rectangle',
-            width: 28,
+            width: 30,
             height: 20,
+            'font-family': GRAPH_FONT,
             'font-size': 9,
-            color: '#57534e',
+            color: COLORS.groupText,
           },
         },
         {
@@ -150,10 +151,5 @@ export function EgoView({ data, onSelectBundle, onSelectNode }: Props) {
     };
   }, [data, onSelectBundle, onSelectNode]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="cy-container bg-white rounded-lg border border-ink-200"
-    />
-  );
+  return <div ref={containerRef} className="cy-container cy-canvas" />;
 }

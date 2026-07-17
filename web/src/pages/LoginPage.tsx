@@ -16,42 +16,45 @@ export function LoginPage() {
   };
 
   return (
-    <div className="h-full flex items-center justify-center bg-ink-50">
+    <div className="h-full flex items-center justify-center bg-surface p-4">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm bg-white border border-ink-200 rounded-xl p-6 shadow-sm space-y-4"
+        className="w-full max-w-sm md-card p-8 space-y-5"
       >
         <div>
-          <h1 className="text-xl font-semibold">Epistemic</h1>
-          <p className="text-sm text-ink-500 mt-1">研究组内部论文证据图</p>
+          <h1 className="text-2xl font-medium text-on-surface flex items-center gap-2">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />
+            Epistemic
+          </h1>
+          <p className="text-sm text-on-surface-variant mt-1">研究组内部论文证据图</p>
         </div>
-        <label className="block text-sm">
-          <span className="text-ink-600">邮箱</span>
+        <label className="block text-sm space-y-1">
+          <span className="text-on-surface-variant">邮箱</span>
           <input
             type="email"
-            className="mt-1 w-full border border-ink-200 rounded-md px-3 py-2"
+            className="md-field w-full"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
           />
         </label>
-        <label className="block text-sm">
-          <span className="text-ink-600">密码</span>
+        <label className="block text-sm space-y-1">
+          <span className="text-on-surface-variant">密码</span>
           <input
             type="password"
-            className="mt-1 w-full border border-ink-200 rounded-md px-3 py-2"
+            className="md-field w-full"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
         </label>
         {login.isError && (
-          <p className="text-sm text-rose-600">{(login.error as Error).message}</p>
+          <p className="text-sm text-error">{(login.error as Error).message}</p>
         )}
         <button
           type="submit"
           disabled={login.isPending}
-          className="w-full bg-ink-900 text-white rounded-md py-2 text-sm font-medium hover:bg-ink-800 disabled:opacity-50"
+          className="md-btn-filled w-full"
         >
           {login.isPending ? '登录中…' : '登录'}
         </button>

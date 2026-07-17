@@ -58,10 +58,10 @@ const VISIBILITIES: { value: Visibility; label: string }[] = [
 ];
 
 const JOB_STATUS_CLS: Record<JobStatus, string> = {
-  queued: 'bg-ink-100 text-ink-600',
-  running: 'bg-amber-100 text-amber-800',
-  done: 'bg-emerald-100 text-emerald-800',
-  failed: 'bg-rose-100 text-rose-800',
+  queued: 'text-on-surface-variant',
+  running: 'text-primary',
+  done: 'text-on-surface-variant',
+  failed: 'text-error',
 };
 
 const JOB_STATUS_LABEL: Record<JobStatus, string> = {
@@ -161,10 +161,11 @@ function EvidenceLinks({
           key={e.id}
           type="button"
           onClick={() => onJump?.(e)}
-          className="block text-left text-xs text-accent hover:underline"
+          className="block text-left text-xs text-primary hover:underline"
         >
           证据 p.{e.page}
           {e.text ? `: “${e.text.slice(0, 60)}${e.text.length > 60 ? '…' : ''}”` : ''}
+          {' ↗'}
         </button>
       ))}
     </div>
@@ -187,26 +188,26 @@ function ClaimJudgmentForm({
   return (
     <div className="mt-2 space-y-1">
       {existing && existing.length > 0 && (
-        <ul className="space-y-1 text-xs text-ink-600">
+        <ul className="space-y-1 text-xs text-on-surface-variant">
           {existing.map((j) => (
-            <li key={j.id} className="border border-ink-100 rounded px-2 py-1">
-              <span className="font-medium text-ink-800">
+            <li key={j.id} className="border border-outline-variant rounded-lg px-2 py-1">
+              <span className="font-medium text-on-surface">
                 {VERDICT_LABEL[j.verdict] ?? j.verdict}
               </span>
               {j.conditions && (
-                <span className="text-ink-500"> · {j.conditions}</span>
+                <span className="text-on-surface-variant"> · {j.conditions}</span>
               )}
               {j.evidence_url && (
                 <a
                   href={j.evidence_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="ml-1 text-accent hover:underline"
+                  className="ml-1 text-primary hover:underline"
                 >
                   证据链接
                 </a>
               )}
-              <span className="ml-1 text-ink-400">
+              <span className="ml-1 text-on-surface-variant">
                 {new Date(j.created_at).toLocaleDateString()}
               </span>
             </li>
@@ -216,14 +217,14 @@ function ClaimJudgmentForm({
       {!open ? (
         <button
           type="button"
-          className="text-xs text-accent hover:underline"
+          className="text-xs text-primary hover:underline"
           onClick={() => setOpen(true)}
         >
           添加判断
         </button>
       ) : (
         <form
-          className="space-y-1.5 border border-ink-100 rounded-md p-2 bg-ink-50/50"
+          className="space-y-1.5 md-card-filled p-2"
           onSubmit={(e) => {
             e.preventDefault();
             judge.mutate(
@@ -248,10 +249,8 @@ function ClaimJudgmentForm({
                 key={v.value}
                 type="button"
                 onClick={() => setVerdict(v.value)}
-                className={`px-2 py-0.5 rounded text-xs border ${
-                  verdict === v.value
-                    ? 'border-accent bg-accent/10 text-accent'
-                    : 'border-ink-200 text-ink-600 hover:bg-white'
+                className={`md-chip ${
+                  verdict === v.value ? 'md-chip-selected' : ''
                 }`}
               >
                 {v.label}
@@ -259,35 +258,35 @@ function ClaimJudgmentForm({
             ))}
           </div>
           <input
-            className="w-full border border-ink-200 rounded px-2 py-1 text-xs"
+            className="md-field w-full text-xs"
             placeholder="适用条件（可选）"
             value={conditions}
             onChange={(e) => setConditions(e.target.value)}
           />
           <input
-            className="w-full border border-ink-200 rounded px-2 py-1 text-xs"
+            className="md-field w-full text-xs"
             placeholder="证据 / 实验链接（可选）"
             value={evidenceUrl}
             onChange={(e) => setEvidenceUrl(e.target.value)}
           />
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             <button
               type="submit"
               disabled={judge.isPending}
-              className="px-2 py-0.5 rounded bg-ink-900 text-white text-xs disabled:opacity-50"
+              className="md-btn-filled md-btn-sm"
             >
               {judge.isPending ? '提交中…' : '提交判断'}
             </button>
             <button
               type="button"
-              className="px-2 py-0.5 rounded border border-ink-200 text-xs"
+              className="md-btn-text md-btn-sm"
               onClick={() => setOpen(false)}
             >
               取消
             </button>
           </div>
           {judge.isError && (
-            <p className="text-xs text-rose-600">
+            <p className="text-xs text-error">
               {(judge.error as Error).message}
             </p>
           )}
@@ -307,9 +306,9 @@ function ClaimItem({
   onJumpEvidence?: (ev: EvidenceSpan) => void;
 }) {
   return (
-    <li className="border-l-2 border-accent pl-3">
-      <p>{claim.text}</p>
-      <p className="text-xs text-ink-400 mt-0.5">
+    <li className="md-card-outlined p-3">
+      <p className="text-on-surface">{claim.text}</p>
+      <p className="text-xs text-on-surface-variant mt-0.5">
         {claim.source} · {claim.review_status}
       </p>
       <EvidenceLinks items={evidence} onJump={onJumpEvidence} />
@@ -388,31 +387,31 @@ export function PaperCard({
     <div className="space-y-6 text-sm">
       {/* ─── 基本 ─── */}
       <header>
-        <h1 className="text-xl font-semibold text-ink-950 leading-snug">
+        <h1 className="text-xl font-semibold text-on-surface leading-snug">
           {v?.title ?? card.work.title_norm}
         </h1>
-        <p className="mt-1 text-ink-600">
+        <p className="mt-1 text-on-surface-variant">
           {card.authors.map((a) => a.author.full_name).join(', ')}
         </p>
-        <p className="mt-1 text-ink-500">
+        <p className="mt-1 text-on-surface-variant">
           {[v?.year, v?.venue_name, v?.arxiv_id && `arXiv:${v.arxiv_id}`]
             .filter(Boolean)
             .join(' · ')}
         </p>
         {v?.pdf_path ? (
-          <p className="mt-1 text-xs text-emerald-600">已有 PDF</p>
+          <p className="mt-1 text-xs text-primary">已有 PDF</p>
         ) : (
-          <p className="mt-1 text-xs text-ink-400">无 PDF</p>
+          <p className="mt-1 text-xs text-on-surface-variant">无 PDF</p>
         )}
         {v?.doi && (
-          <p className="mt-0.5 text-xs text-ink-500">DOI: {v.doi}</p>
+          <p className="mt-0.5 text-xs text-on-surface-variant">DOI: {v.doi}</p>
         )}
         {v?.url && (
           <a
             href={v.url}
             target="_blank"
             rel="noreferrer"
-            className="mt-0.5 block text-xs text-accent hover:underline"
+            className="mt-0.5 block text-xs text-primary hover:underline"
           >
             原文链接
           </a>
@@ -420,18 +419,18 @@ export function PaperCard({
 
         {card.versions.length > 1 && (
           <div className="mt-2">
-            <h3 className="text-xs font-medium text-ink-500 mb-1">版本家族</h3>
-            <ul className="space-y-0.5 text-xs text-ink-600">
+            <h3 className="text-xs font-medium text-on-surface-variant mb-1">版本家族</h3>
+            <ul className="space-y-0.5 text-xs text-on-surface-variant">
               {card.versions.map((ver) => (
                 <li key={ver.id} className="flex gap-2 items-baseline">
-                  <span className="font-mono text-ink-400">{ver.kind}</span>
+                  <span className="font-mono text-on-surface-variant">{ver.kind}</span>
                   <span>
                     {[ver.year, ver.venue_name, ver.arxiv_id]
                       .filter(Boolean)
                       .join(' · ') || ver.title.slice(0, 40)}
                   </span>
                   {ver.id === v?.id && (
-                    <span className="text-accent">主版本</span>
+                    <span className="text-primary">主版本</span>
                   )}
                 </li>
               ))}
@@ -444,7 +443,7 @@ export function PaperCard({
             {card.projects.map((p) => (
               <span
                 key={p.id}
-                className="inline-flex px-2 py-0.5 rounded-full text-xs bg-ink-100 text-ink-700"
+                className="md-chip-static"
                 title={p.description}
               >
                 {p.name}
@@ -456,14 +455,14 @@ export function PaperCard({
 
       {v?.abstract_text && (
         <section>
-          <h2 className="font-medium text-ink-800 mb-1">摘要</h2>
-          <p className="text-ink-700 leading-relaxed">{v.abstract_text}</p>
+          <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">摘要</h2>
+          <p className="text-on-surface leading-relaxed">{v.abstract_text}</p>
         </section>
       )}
 
       {card.aspects && card.aspects.length > 0 && (
         <section>
-          <h2 className="font-medium text-ink-800 mb-2">多层分析</h2>
+          <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">多层分析</h2>
           <div className="space-y-3">
             {card.aspects.map((a) => {
               const bullets = Array.isArray(a.bullets)
@@ -473,22 +472,22 @@ export function PaperCard({
                 : [];
               if (!a.summary?.trim() && bullets.length === 0) return null;
               return (
-                <div key={a.aspect}>
-                  <h3 className="text-xs font-medium text-ink-500 mb-1">
+                <div key={a.aspect} className="md-card-filled p-3 rounded-xl">
+                  <h3 className="text-sm font-medium text-on-surface mb-1">
                     {aspectByKey(a.aspect)?.label ?? a.aspect}
                   </h3>
                   {a.summary?.trim() && (
-                    <p className="text-ink-700 leading-relaxed">{a.summary}</p>
+                    <p className="text-on-surface leading-relaxed">{a.summary}</p>
                   )}
                   {bullets.length > 0 && (
-                    <ul className="mt-1 list-disc pl-4 text-ink-600 space-y-0.5">
+                    <ul className="mt-1 list-disc pl-4 text-on-surface-variant space-y-0.5">
                       {bullets.map((b, i) => (
                         <li key={i}>{b}</li>
                       ))}
                     </ul>
                   )}
                   {a.source_text?.trim() && (
-                    <p className="mt-1 text-xs text-ink-400 italic">
+                    <p className="mt-1 text-xs text-on-surface-variant italic">
                       “{a.source_text.slice(0, 160)}
                       {a.source_text.length > 160 ? '…' : ''}”
                       {a.page > 0 ? ` · p.${a.page}` : ''}
@@ -503,30 +502,30 @@ export function PaperCard({
 
       {/* ─── 研究 ─── */}
       <section>
-        <h2 className="font-medium text-ink-800 mb-2">研究</h2>
+        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">研究</h2>
 
         {dnaFields.length === 0 &&
           claimsWithJudgments.length === 0 &&
           card.methods.length === 0 && (
-            <p className="text-xs text-ink-400">
+            <p className="text-xs text-on-surface-variant">
               DNA 尚未就绪（抽取完成后会显示研究问题、贡献、方法、结论等）
             </p>
           )}
 
         {dnaFields.map((f) => (
           <div key={f.key} className="mb-3">
-            <h3 className="text-xs font-medium text-ink-500 mb-1">{f.label}</h3>
+            <h3 className="text-xs font-medium text-on-surface-variant mb-1">{f.label}</h3>
             <ul className="space-y-1">
               {f.items.map((e) => (
                 <li key={e.id}>
                   <button
                     type="button"
                     onClick={() => onJumpEvidence?.(e)}
-                    className="text-left text-ink-700 hover:text-accent"
+                    className="text-left text-on-surface hover:text-primary"
                   >
                     {e.text}
                   </button>
-                  <span className="ml-1 text-xs text-ink-400">p.{e.page}</span>
+                  <span className="ml-1 text-xs text-primary">p.{e.page} ↗</span>
                 </li>
               ))}
             </ul>
@@ -535,7 +534,7 @@ export function PaperCard({
 
         {card.methods.length > 0 && (
           <div className="mb-3">
-            <h3 className="text-xs font-medium text-ink-500 mb-1">方法与组件</h3>
+            <h3 className="text-xs font-medium text-on-surface-variant mb-1">方法与组件</h3>
             <ul className="space-y-2">
               {card.methods.map((m) => {
                 const evs = (card.evidence ?? []).filter(
@@ -543,9 +542,9 @@ export function PaperCard({
                 );
                 return (
                   <li key={m.id}>
-                    <span className="font-medium">{m.name}</span>
+                    <span className="font-medium text-on-surface">{m.name}</span>
                     {m.description && (
-                      <span className="text-ink-600"> — {m.description}</span>
+                      <span className="text-on-surface-variant"> — {m.description}</span>
                     )}
                     <EvidenceLinks items={evs} onJump={onJumpEvidence} />
                   </li>
@@ -557,7 +556,7 @@ export function PaperCard({
 
         {claimsWithJudgments.length > 0 && (
           <div>
-            <h3 className="text-xs font-medium text-ink-500 mb-1">
+            <h3 className="text-xs font-medium text-on-surface-variant mb-1">
               主要结论（Claims）
             </h3>
             <ul className="space-y-3">
@@ -587,7 +586,7 @@ export function PaperCard({
             ].includes(e.extraction_field),
         ).length > 0 && (
           <div className="mt-3">
-            <h3 className="text-xs font-medium text-ink-500 mb-1">其他字段证据</h3>
+            <h3 className="text-xs font-medium text-on-surface-variant mb-1">其他字段证据</h3>
             <ul className="space-y-1">
               {(card.evidence ?? [])
                 .filter(
@@ -607,9 +606,9 @@ export function PaperCard({
                     <button
                       type="button"
                       onClick={() => onJumpEvidence?.(e)}
-                      className="text-xs text-left text-ink-600 hover:text-accent"
+                      className="text-xs text-left text-on-surface-variant hover:text-primary"
                     >
-                      <span className="font-mono text-ink-400">
+                      <span className="font-mono text-on-surface-variant">
                         {e.extraction_field}
                       </span>{' '}
                       p.{e.page}: {e.text.slice(0, 60)}
@@ -623,28 +622,28 @@ export function PaperCard({
 
       {/* ─── 团队 ─── */}
       <section>
-        <h2 className="font-medium text-ink-800 mb-2">团队</h2>
+        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">团队</h2>
 
         <div className="mb-3">
-          <h3 className="text-xs font-medium text-ink-500 mb-1">阅读状态</h3>
-          <div className="flex flex-wrap gap-2">
+          <h3 className="text-xs font-medium text-on-surface-variant mb-1">阅读状态</h3>
+          <div className="flex flex-wrap gap-1.5">
             {levels.map((s) => (
               <button
                 key={s}
                 onClick={() => setReading.mutate({ status: s })}
-                className="px-2 py-1 rounded border border-ink-200 hover:bg-ink-50"
+                className="md-chip"
               >
                 <StatusDot status={s} />
               </button>
             ))}
           </div>
           {card.reading.length > 0 && (
-            <ul className="mt-2 space-y-1 text-ink-600">
+            <ul className="mt-2 space-y-1 text-on-surface-variant">
               {card.reading.map((r) => (
                 <li key={r.user_id} className="flex items-center gap-1">
                   <StatusDot status={r.status} />
-                  {r.starred && <span className="text-amber-500">★</span>}
-                  <span className="text-xs text-ink-400 font-mono">
+                  {r.starred && <span className="text-primary">★</span>}
+                  <span className="text-xs text-on-surface-variant font-mono">
                     {r.user_id.slice(0, 8)}
                   </span>
                 </li>
@@ -654,7 +653,7 @@ export function PaperCard({
         </div>
 
         <div>
-          <h3 className="text-xs font-medium text-ink-500 mb-1">
+          <h3 className="text-xs font-medium text-on-surface-variant mb-1">
             批注 ({card.annotations_count}
             {annotations ? ` · 已加载 ${annotations.length}` : ''})
           </h3>
@@ -664,11 +663,11 @@ export function PaperCard({
               {annotations.map((a) => (
                 <li
                   key={a.id}
-                  className={`border border-ink-100 rounded-md p-2 text-xs ${
-                    a.parent_id ? 'ml-4 border-l-2 border-l-ink-200' : ''
+                  className={`bg-surface-container-low rounded-xl p-2 text-xs ${
+                    a.parent_id ? 'ml-4 border-l-2 border-outline-variant' : ''
                   }`}
                 >
-                  <div className="text-ink-400 mb-0.5 flex flex-wrap gap-1 items-center">
+                  <div className="text-on-surface-variant mb-0.5 flex flex-wrap gap-1 items-center">
                     <span>
                       {ANN_KINDS.find((k) => k.value === a.kind)?.label ?? a.kind}
                     </span>
@@ -681,13 +680,13 @@ export function PaperCard({
                     <span>{new Date(a.created_at).toLocaleString()}</span>
                     <button
                       type="button"
-                      className="ml-auto text-accent hover:underline"
+                      className="ml-auto text-primary hover:underline"
                       onClick={() => setReplyTo(a.id)}
                     >
                       回复
                     </button>
                   </div>
-                  <p className="text-ink-700 whitespace-pre-wrap">{a.body}</p>
+                  <p className="text-on-surface whitespace-pre-wrap">{a.body}</p>
                 </li>
               ))}
             </ul>
@@ -716,7 +715,7 @@ export function PaperCard({
           >
             <div className="flex flex-wrap gap-2">
               <select
-                className="border border-ink-200 rounded px-2 py-1 text-xs"
+                className="md-field text-xs"
                 value={annKind}
                 onChange={(e) => setAnnKind(e.target.value as AnnotationKind)}
               >
@@ -727,7 +726,7 @@ export function PaperCard({
                 ))}
               </select>
               <select
-                className="border border-ink-200 rounded px-2 py-1 text-xs"
+                className="md-field text-xs"
                 value={annVis}
                 onChange={(e) => setAnnVis(e.target.value as Visibility)}
               >
@@ -738,11 +737,11 @@ export function PaperCard({
                 ))}
               </select>
               {replyTo && (
-                <span className="inline-flex items-center gap-1 text-xs text-ink-500">
+                <span className="inline-flex items-center gap-1 text-xs text-on-surface-variant">
                   回复中
                   <button
                     type="button"
-                    className="text-rose-500 hover:underline"
+                    className="text-error hover:underline"
                     onClick={() => setReplyTo(null)}
                   >
                     取消
@@ -752,7 +751,7 @@ export function PaperCard({
             </div>
             <div className="flex gap-2">
               <input
-                className="flex-1 border border-ink-200 rounded px-2 py-1"
+                className="md-field flex-1"
                 placeholder={
                   replyTo ? '写一条回复…' : '写一条批注（笔记 / 猜想 / 问题）…'
                 }
@@ -762,7 +761,7 @@ export function PaperCard({
               <button
                 type="submit"
                 disabled={createAnn.isPending}
-                className="px-3 py-1 rounded bg-ink-900 text-white text-xs disabled:opacity-50"
+                className="md-btn-filled md-btn-sm self-center"
               >
                 发送
               </button>
@@ -773,10 +772,10 @@ export function PaperCard({
 
       {/* ─── 图谱 ─── */}
       <section>
-        <h2 className="font-medium text-ink-800 mb-2">图谱</h2>
+        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">图谱</h2>
         {(card.relations ?? []).filter((r) => r.relation.type !== 'cites')
           .length === 0 ? (
-          <p className="text-xs text-ink-400">暂无断言关系</p>
+          <p className="text-xs text-on-surface-variant">暂无断言关系</p>
         ) : (
           <div className="space-y-3">
             {GRAPH_GROUPS.map((g) => {
@@ -784,9 +783,9 @@ export function PaperCard({
               if (items.length === 0) return null;
               return (
                 <div key={g.key}>
-                  <h3 className="text-xs font-medium text-ink-500 mb-1">
+                  <h3 className="text-xs font-medium text-on-surface-variant mb-1">
                     {g.label}
-                    <span className="ml-1 text-ink-400 font-normal">
+                    <span className="ml-1 font-normal">
                       ({items.length})
                     </span>
                   </h3>
@@ -794,7 +793,7 @@ export function PaperCard({
                     {items.map((rd) => (
                       <li
                         key={rd.relation.id}
-                        className="border border-ink-100 rounded-md p-2"
+                        className="md-card-outlined p-2"
                       >
                         <div className="flex flex-wrap items-center gap-2 mb-1">
                           <RelationBadge
@@ -802,18 +801,18 @@ export function PaperCard({
                             status={rd.relation.review_status}
                           />
                           {rd.relation.aspect && (
-                            <span className="text-xs text-ink-400">
+                            <span className="text-xs text-on-surface-variant">
                               {rd.relation.aspect}
                             </span>
                           )}
                           {rd.relation.confidence != null && (
-                            <span className="text-xs text-ink-400">
+                            <span className="text-xs text-on-surface-variant">
                               conf {(rd.relation.confidence * 100).toFixed(0)}%
                             </span>
                           )}
                         </div>
                         {rd.relation.explanation && (
-                          <p className="text-ink-700 text-xs leading-relaxed">
+                          <p className="text-on-surface text-xs leading-relaxed">
                             {rd.relation.explanation}
                           </p>
                         )}
@@ -834,11 +833,12 @@ export function PaperCard({
                                     relation_id: rd.relation.id,
                                   })
                                 }
-                                className="block text-left text-xs text-accent hover:underline"
+                                className="block text-left text-xs text-primary hover:underline"
                               >
                                 证据 p.{e.page}: “
                                 {e.text.slice(0, 80)}
                                 {e.text.length > 80 ? '…' : ''}”
+                                {' ↗'}
                               </button>
                             ))}
                           </div>
@@ -855,33 +855,33 @@ export function PaperCard({
 
       {/* ─── 管线 ─── */}
       <section>
-        <h2 className="font-medium text-ink-800 mb-2">管线</h2>
+        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">管线</h2>
         {pipeline.length === 0 ? (
-          <p className="text-xs text-ink-400">暂无任务记录</p>
+          <p className="text-xs text-on-surface-variant">暂无任务记录</p>
         ) : (
           <ul className="space-y-1.5">
             {pipeline.map((job: Job) => (
               <li
                 key={job.id}
-                className="flex flex-wrap items-start gap-2 text-xs border border-ink-100 rounded px-2 py-1.5"
+                className="flex flex-wrap items-start gap-2 text-xs border border-outline-variant rounded-lg px-2 py-1.5"
               >
                 <span
-                  className={`shrink-0 px-1.5 py-0.5 rounded ${
-                    JOB_STATUS_CLS[job.status] ?? 'bg-ink-100 text-ink-600'
+                  className={`shrink-0 font-medium ${
+                    JOB_STATUS_CLS[job.status] ?? 'text-on-surface-variant'
                   }`}
                 >
                   {JOB_STATUS_LABEL[job.status] ?? job.status}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-ink-800">
+                  <div className="font-medium text-on-surface">
                     {JOB_KIND_LABEL[job.kind] ?? job.kind}
                   </div>
                   {job.last_error && (
-                    <p className="text-rose-600 mt-0.5 break-words">
+                    <p className="text-error mt-0.5 break-words">
                       {job.last_error}
                     </p>
                   )}
-                  <p className="text-ink-400 mt-0.5">
+                  <p className="text-on-surface-variant mt-0.5">
                     尝试 {job.attempts} ·{' '}
                     {new Date(job.created_at).toLocaleString()}
                   </p>
@@ -890,7 +890,7 @@ export function PaperCard({
                   <button
                     type="button"
                     disabled={requeue.isPending}
-                    className="shrink-0 px-2 py-0.5 rounded border border-ink-200 hover:bg-ink-50 text-ink-700 disabled:opacity-50"
+                    className="shrink-0 md-btn-text md-btn-sm"
                     onClick={() => {
                       const payload = (job.payload ?? {}) as {
                         version_id?: string;
@@ -911,7 +911,7 @@ export function PaperCard({
           </ul>
         )}
         {requeue.isError && (
-          <p className="mt-1 text-xs text-rose-600">
+          <p className="mt-1 text-xs text-error">
             重试失败：{(requeue.error as Error).message}
           </p>
         )}

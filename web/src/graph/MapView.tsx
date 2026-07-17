@@ -4,7 +4,7 @@ import cytoscape, { type Core } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import type { MapEdge, MapResponse } from '../api/types';
 import { useUiStore } from '../stores/ui';
-import { cyStylesheet } from './styles';
+import { COLORS, GRAPH_FONT, cyStylesheet } from './styles';
 import {
   aspectNeighborMap,
   combineNeighbors,
@@ -267,14 +267,14 @@ export function MapView({
           selector: 'node[border_w]',
           style: {
             'border-width': 'data(border_w)',
-            'border-color': '#2563eb',
+            'border-color': COLORS.readerBorder,
           },
         },
         {
           selector: 'node[readers = 0]',
           style: {
-            'border-color': '#fff',
-            'border-width': 2,
+            'border-color': COLORS.nodeBorder,
+            'border-width': 1.5,
           },
         },
         {
@@ -295,26 +295,30 @@ export function MapView({
             'curve-style': 'unbundled-bezier',
             'control-point-distances': 28,
             'control-point-weights': 0.5,
-            width: 1.1,
-            'line-color': '#94a3b8',
-            'line-opacity': 0.32,
+            // Width tracks similarity — stronger pairs read as firmer threads.
+            width: 'mapData(score, 0.25, 0.9, 0.7, 2.2)',
+            'line-color': COLORS.simEdge,
+            'line-opacity': 0.28,
             'target-arrow-shape': 'none',
             'line-style': 'solid',
             label: '',
+            'font-family': GRAPH_FONT,
             'font-size': 7,
-            color: '#64748b',
+            color: COLORS.labelMuted,
           },
         },
         {
           selector: 'edge.similarity:selected, edge.similarity.hovered',
           style: {
             label: 'data(label)',
-            'line-opacity': 0.9,
+            'line-color': COLORS.simEdgeHover,
+            'line-opacity': 0.95,
             width: 2,
             'z-index': 99,
-            'text-background-color': '#ffffff',
-            'text-background-opacity': 0.9,
+            'text-background-color': COLORS.labelOutline,
+            'text-background-opacity': 0.92,
             'text-background-padding': 2,
+            'text-background-shape': 'roundrectangle',
           },
         },
         {
@@ -507,10 +511,5 @@ export function MapView({
     } as cytoscape.LayoutOptions).run();
   }, [weights, topicEnabled, data.neighbors, activeAspect]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="cy-container bg-white rounded-lg border border-ink-200"
-    />
-  );
+  return <div ref={containerRef} className="cy-container cy-canvas" />;
 }

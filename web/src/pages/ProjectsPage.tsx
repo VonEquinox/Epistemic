@@ -8,8 +8,8 @@ export function ProjectsPage() {
   const [name, setName] = useState('');
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-4">
-      <h1 className="text-lg font-semibold">项目</h1>
+    <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4">
+      <h1 className="text-xl font-medium text-on-surface">项目</h1>
       <form
         className="flex gap-2"
         onSubmit={(e) => {
@@ -19,12 +19,12 @@ export function ProjectsPage() {
         }}
       >
         <input
-          className="flex-1 border border-ink-200 rounded-md px-3 py-2 text-sm"
+          className="md-field flex-1"
           placeholder="新项目名称"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <button className="px-3 py-2 rounded-md bg-ink-900 text-white text-sm">
+        <button className="md-btn-filled">
           创建
         </button>
       </form>
@@ -33,11 +33,11 @@ export function ProjectsPage() {
           <li key={p.id}>
             <Link
               to={`/projects/${p.id}`}
-              className="block border border-ink-200 rounded-lg p-4 bg-white hover:border-accent"
+              className="block md-card-outlined p-4 hover:shadow-elev1 transition-shadow"
             >
-              <div className="font-medium">{p.name}</div>
+              <div className="font-medium text-on-surface">{p.name}</div>
               {p.description && (
-                <div className="text-sm text-ink-500 mt-1">{p.description}</div>
+                <div className="text-sm text-on-surface-variant mt-1">{p.description}</div>
               )}
             </Link>
           </li>

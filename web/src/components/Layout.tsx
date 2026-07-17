@@ -15,11 +15,17 @@ export function Layout() {
   const { data: me } = useMe();
   const logout = useLogout();
 
+  const initial = me?.name?.trim()?.[0]?.toUpperCase() ?? '·';
+
   return (
-    <div className="h-full flex flex-col">
-      <header className="border-b border-ink-200 bg-white">
-        <div className="max-w-[1400px] mx-auto px-4 h-12 flex items-center gap-6">
-          <Link to="/groups" className="font-semibold tracking-tight text-ink-950">
+    <div className="h-full flex flex-col bg-surface">
+      <header className="bg-surface-container-low border-b border-outline-variant">
+        <div className="max-w-[1400px] mx-auto px-4 h-14 flex items-center gap-6">
+          <Link
+            to="/groups"
+            className="flex items-center gap-2 font-semibold tracking-tight text-on-surface"
+          >
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />
             Epistemic
           </Link>
           <nav className="flex gap-1 text-sm">
@@ -28,10 +34,10 @@ export function Layout() {
                 key={n.to}
                 to={n.to}
                 className={({ isActive }) =>
-                  `px-3 py-1.5 rounded-md ${
+                  `px-3 py-1.5 rounded-full transition-colors ${
                     isActive
-                      ? 'bg-ink-100 text-ink-950 font-medium'
-                      : 'text-ink-600 hover:bg-ink-50'
+                      ? 'bg-secondary-container text-on-secondary-container font-medium'
+                      : 'text-on-surface-variant hover:bg-surface-container-high'
                   }`
                 }
               >
@@ -39,10 +45,20 @@ export function Layout() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-3 text-sm text-ink-600">
-            {me && <span>{me.name}</span>}
+          <div className="ml-auto flex items-center gap-3 text-sm">
+            {me && (
+              <div className="flex items-center gap-2">
+                <span
+                  className="grid place-items-center h-8 w-8 rounded-full bg-primary-container text-on-primary-container text-xs font-medium"
+                  title={me.name}
+                >
+                  {initial}
+                </span>
+                <span className="text-on-surface-variant">{me.name}</span>
+              </div>
+            )}
             <button
-              className="text-ink-500 hover:text-ink-900"
+              className="md-btn-text md-btn-sm"
               onClick={() => logout.mutate()}
             >
               退出

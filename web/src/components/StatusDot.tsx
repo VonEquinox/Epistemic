@@ -1,11 +1,11 @@
 import type { ReadingLevel } from '../api/types';
 
 const colors: Record<ReadingLevel, string> = {
-  unread: 'bg-ink-300',
-  skimmed: 'bg-amber-400',
-  read: 'bg-emerald-500',
-  reproduced: 'bg-blue-600',
-  needs_review: 'bg-rose-500',
+  unread: 'bg-outline-variant',
+  skimmed: 'bg-outline',
+  read: 'bg-primary',
+  reproduced: 'bg-tertiary',
+  needs_review: 'bg-error',
 };
 
 const labels: Record<ReadingLevel, string> = {
@@ -18,7 +18,7 @@ const labels: Record<ReadingLevel, string> = {
 
 export function StatusDot({ status }: { status: ReadingLevel }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-ink-600">
+    <span className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant">
       <span className={`w-2 h-2 rounded-full ${colors[status]}`} />
       {labels[status]}
     </span>

@@ -47,28 +47,28 @@ export function EgoPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="h-11 border-b border-ink-100 bg-white px-4 flex items-center gap-4 text-sm">
-        <Link to="/map" className="text-ink-500 hover:text-ink-800">
+      <div className="h-11 shrink-0 border-b border-outline-variant bg-surface-container-lowest px-4 flex items-center gap-4 text-sm">
+        <Link to="/map" className="text-on-surface-variant hover:text-on-surface">
           ← 地图
         </Link>
-        <span className="font-medium">Ego · {data?.center.label ?? id}</span>
-        <label className="text-xs text-ink-600 flex items-center gap-1">
+        <span className="font-medium text-on-surface">Ego · {data?.center.label ?? id}</span>
+        <label className="text-xs text-on-surface-variant flex items-center gap-1">
           跳数
           <select
             value={depth}
             onChange={(e) => setDepth(Number(e.target.value))}
-            className="border border-ink-200 rounded px-1"
+            className="md-field text-xs"
           >
             <option value={1}>1</option>
             <option value={2}>2</option>
           </select>
         </label>
-        <label className="text-xs text-ink-600 flex items-center gap-1">
+        <label className="text-xs text-on-surface-variant flex items-center gap-1">
           模式
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as Mode)}
-            className="border border-ink-200 rounded px-1"
+            className="md-field text-xs"
           >
             <option value="explore">探索</option>
             <option value="review">审读</option>
@@ -76,7 +76,7 @@ export function EgoPage() {
           </select>
         </label>
         {data?.groups && data.groups.length > 0 && (
-          <span className="text-xs text-ink-400">
+          <span className="text-xs text-on-surface-variant">
             溢出组 {data.groups.length}
             {expandedGroups.size > 0 && ` · 已展开 ${expandedGroups.size}`}
           </span>
@@ -84,9 +84,9 @@ export function EgoPage() {
       </div>
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 p-3">
-          {isLoading && <p className="text-ink-500 text-sm">加载…</p>}
+          {isLoading && <p className="text-on-surface-variant text-sm">加载…</p>}
           {error && (
-            <p className="text-rose-600 text-sm">{(error as Error).message}</p>
+            <p className="text-error text-sm">{(error as Error).message}</p>
           )}
           {data && (
             <EgoView
@@ -97,11 +97,11 @@ export function EgoPage() {
           )}
         </div>
         {(selectedRels.length > 0 || edge) && (
-          <aside className="w-80 border-l border-ink-200 bg-white p-4 text-sm space-y-3 overflow-y-auto">
-            <h3 className="font-medium">
+          <aside className="w-80 shrink-0 md-card m-3 ml-0 p-4 text-sm space-y-3 overflow-y-auto">
+            <h3 className="font-medium text-on-surface">
               关系证据
               {selectedRels.length > 1 && (
-                <span className="ml-2 text-xs font-normal text-ink-400">
+                <span className="ml-2 text-xs font-normal text-on-surface-variant">
                   束内 {selectedRels.length} 条
                 </span>
               )}
@@ -116,17 +116,17 @@ export function EgoPage() {
                     <li key={rid}>
                       <button
                         type="button"
-                        className={`w-full text-left text-xs px-2 py-1 rounded border ${
+                        className={`w-full text-left text-xs px-2 py-1 rounded-lg border ${
                           rid === primaryRel
-                            ? 'border-accent bg-blue-50'
-                            : 'border-ink-100 hover:bg-ink-50'
+                            ? 'border-transparent bg-secondary-container text-on-secondary-container'
+                            : 'border-outline-variant hover:bg-surface-container'
                         }`}
                         onClick={() =>
                           setSelectedRels([rid, ...selectedRels.filter((x) => x !== rid)])
                         }
                       >
                         <RelationBadge type={e.relation_type} status={e.review_status} />
-                        <span className="ml-1 text-ink-500">
+                        <span className="ml-1 text-on-surface-variant">
                           {e.confidence?.toFixed(2) ?? '—'}
                         </span>
                       </button>
@@ -142,8 +142,8 @@ export function EgoPage() {
                   type={edge.relation_type}
                   status={edge.review_status}
                 />
-                <p className="text-ink-700">{edge.explanation || '（无解释）'}</p>
-                <p className="text-xs text-ink-400">
+                <p className="text-on-surface">{edge.explanation || '（无解释）'}</p>
+                <p className="text-xs text-on-surface-variant">
                   {edge.source_layer} · confidence{' '}
                   {edge.confidence?.toFixed(2) ?? '—'} · reviews {edge.review_count}
                 </p>
@@ -151,19 +151,19 @@ export function EgoPage() {
                 {detail?.evidence?.map((ev) => (
                   <blockquote
                     key={ev.id}
-                    className="text-xs text-ink-600 border-l-2 border-ink-200 pl-3 italic"
+                    className="border-l-2 border-primary bg-surface-container-low rounded-r-lg px-3 py-2 text-sm text-on-surface-variant"
                   >
                     p.{ev.page}: “{ev.text}”
                     {detail.members.find((m) => m.role === 'source')
                       ?.anchor_work_id && (
                       <a
-                        className="ml-2 not-italic text-accent hover:underline"
+                        className="ml-2 text-primary text-xs hover:underline"
                         href={`/papers/${
                           detail.members.find((m) => m.role === 'source')
                             ?.anchor_work_id
                         }?page=${ev.page}&evidence=${ev.id}`}
                       >
-                        跳到 PDF
+                        跳到 PDF ↗
                       </a>
                     )}
                   </blockquote>
@@ -171,7 +171,7 @@ export function EgoPage() {
 
                 <div className="flex gap-2 pt-2">
                   <button
-                    className="px-3 py-1 text-xs rounded bg-emerald-600 text-white"
+                    className="md-btn-tonal md-btn-sm"
                     onClick={() =>
                       review.mutate(
                         { id: edge.relation_id, verdict: 'agree' },
@@ -187,7 +187,7 @@ export function EgoPage() {
                     确认
                   </button>
                   <button
-                    className="px-3 py-1 text-xs rounded bg-rose-600 text-white"
+                    className="md-btn-outlined md-btn-sm text-error border-outline"
                     onClick={() =>
                       review.mutate(
                         { id: edge.relation_id, verdict: 'disagree' },
@@ -206,13 +206,13 @@ export function EgoPage() {
               </>
             )}
 
-            <Link to="/review" className="text-accent text-xs hover:underline">
+            <Link to="/review" className="text-primary text-xs hover:underline">
               去审核队列处理
             </Link>
             {data?.center.work_id && (
               <Link
                 to={`/papers/${data.center.work_id}`}
-                className="block text-accent text-xs hover:underline"
+                className="block text-primary text-xs hover:underline"
               >
                 打开论文 PDF
               </Link>

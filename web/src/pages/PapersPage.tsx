@@ -9,12 +9,13 @@ export function PapersPage() {
   const quickAdd = useQuickAdd();
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-4">
+    <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-4">
+      <h1 className="text-xl font-medium text-on-surface">论文</h1>
       <div className="flex gap-3 items-end">
         <label className="flex-1 text-sm">
-          <span className="text-ink-600">搜索</span>
+          <span className="text-on-surface-variant">搜索</span>
           <input
-            className="mt-1 w-full border border-ink-200 rounded-md px-3 py-2"
+            className="md-field mt-1 w-full"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="标题 / arXiv id"
@@ -29,14 +30,14 @@ export function PapersPage() {
           }}
         >
           <input
-            className="flex-1 border border-ink-200 rounded-md px-3 py-2 text-sm"
+            className="md-field flex-1"
             placeholder="快速添加：arXiv URL / DOI"
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />
           <button
             type="submit"
-            className="px-3 py-2 rounded-md bg-ink-900 text-white text-sm"
+            className="md-btn-filled"
           >
             添加
           </button>
@@ -44,23 +45,23 @@ export function PapersPage() {
       </div>
 
       {quickAdd.isError && (
-        <p className="text-sm text-rose-600">{(quickAdd.error as Error).message}</p>
+        <p className="text-sm text-error">{(quickAdd.error as Error).message}</p>
       )}
 
-      <div className="bg-white border border-ink-200 rounded-lg overflow-hidden">
+      <div className="md-card-outlined overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-ink-600 text-left">
+          <thead className="text-on-surface-variant text-xs uppercase tracking-wide text-left">
             <tr>
-              <th className="px-3 py-2 font-medium">标题</th>
-              <th className="px-3 py-2 font-medium w-20">年份</th>
-              <th className="px-3 py-2 font-medium">作者</th>
-              <th className="px-3 py-2 font-medium w-32">arXiv</th>
+              <th className="px-3 py-2.5 font-medium">标题</th>
+              <th className="px-3 py-2.5 font-medium w-20">年份</th>
+              <th className="px-3 py-2.5 font-medium">作者</th>
+              <th className="px-3 py-2.5 font-medium w-32">arXiv</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-ink-400">
+                <td colSpan={4} className="px-3 py-6 text-on-surface-variant border-t border-outline-variant">
                   加载中…
                 </td>
               </tr>
@@ -68,29 +69,29 @@ export function PapersPage() {
             {data?.map((item) => (
               <tr
                 key={item.work.id}
-                className="border-t border-ink-100 hover:bg-ink-50"
+                className="border-t border-outline-variant hover:bg-surface-container-low transition-colors"
               >
                 <td className="px-3 py-2">
                   <Link
                     to={`/papers/${item.work.id}`}
-                    className="text-ink-900 hover:text-accent"
+                    className="text-on-surface hover:text-primary"
                   >
                     {item.title}
                   </Link>
                 </td>
-                <td className="px-3 py-2 text-ink-500">{item.year ?? '—'}</td>
-                <td className="px-3 py-2 text-ink-600 truncate max-w-[200px]">
+                <td className="px-3 py-2 text-on-surface-variant">{item.year ?? '—'}</td>
+                <td className="px-3 py-2 text-on-surface-variant truncate max-w-[200px]">
                   {item.authors.slice(0, 3).join(', ')}
                   {item.authors.length > 3 && ' et al.'}
                 </td>
-                <td className="px-3 py-2 font-mono text-xs text-ink-500">
+                <td className="px-3 py-2 font-mono text-xs text-on-surface-variant">
                   {item.arxiv_id ?? '—'}
                 </td>
               </tr>
             ))}
             {data?.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-ink-400">
+                <td colSpan={4} className="px-3 py-6 text-on-surface-variant border-t border-outline-variant">
                   暂无论文。用上方输入框添加 arXiv 链接，或去「导入」批量粘贴。
                 </td>
               </tr>

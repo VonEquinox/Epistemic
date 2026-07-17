@@ -24,34 +24,40 @@ export function InvitePage() {
   };
 
   return (
-    <div className="h-full flex items-center justify-center">
+    <div className="h-full flex items-center justify-center bg-surface p-4">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm bg-white border border-ink-200 rounded-xl p-6 space-y-4"
+        className="w-full max-w-sm md-card p-8 space-y-5"
       >
-        <h1 className="text-lg font-semibold">接受邀请</h1>
-        <label className="block text-sm">
+        <div>
+          <div className="text-2xl font-medium text-on-surface flex items-center gap-2">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />
+            Epistemic
+          </div>
+          <h1 className="text-sm text-on-surface-variant mt-1">接受邀请</h1>
+        </div>
+        <label className="block text-sm text-on-surface-variant">
           姓名
           <input
-            className="mt-1 w-full border border-ink-200 rounded-md px-3 py-2"
+            className="md-field w-full mt-1"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
           />
         </label>
-        <label className="block text-sm">
+        <label className="block text-sm text-on-surface-variant">
           密码（≥8 位）
           <input
             type="password"
-            className="mt-1 w-full border border-ink-200 rounded-md px-3 py-2"
+            className="md-field w-full mt-1"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             minLength={8}
             required
           />
         </label>
-        {error && <p className="text-sm text-rose-600">{error}</p>}
-        <button className="w-full bg-ink-900 text-white rounded-md py-2 text-sm">
+        {error && <p className="text-sm text-error">{error}</p>}
+        <button className="md-btn-filled w-full">
           注册并登录
         </button>
       </form>

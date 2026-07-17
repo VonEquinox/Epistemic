@@ -2,23 +2,293 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
+/* ── Material Design 3 tokens (light scheme, blue seed #0B57D0) ─────────── */
+:root {
+  --md-primary: #0b57d0;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #d3e3fd;
+  --md-on-primary-container: #041e49;
+
+  --md-secondary: #575e71;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: #dbe2f9;
+  --md-on-secondary-container: #141b2c;
+
+  --md-tertiary: #715573;
+  --md-on-tertiary: #ffffff;
+  --md-tertiary-container: #fbd7fc;
+  --md-on-tertiary-container: #29132d;
+
+  --md-error: #b3261e;
+  --md-on-error: #ffffff;
+  --md-error-container: #f9dedc;
+  --md-on-error-container: #410e0b;
+
+  --md-surface: #f9f9ff;
+  --md-surface-dim: #d9d9e0;
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #f3f3fa;
+  --md-surface-container: #ededf4;
+  --md-surface-container-high: #e7e8ee;
+  --md-surface-container-highest: #e2e2e9;
+
+  --md-on-surface: #191c20;
+  --md-on-surface-variant: #44474e;
+  --md-outline: #74777f;
+  --md-outline-variant: #c4c6d0;
+
+  --md-inverse-surface: #2e3036;
+  --md-inverse-on-surface: #f0f0f7;
+  --md-inverse-primary: #aac7ff;
+}
+
+html,
+body,
+#root {
   height: 100%;
 }
 
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
+  background: var(--md-surface);
+  color: var(--md-on-surface);
 }
 
-/* Graph canvas fills remaining space */
+::selection {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+:focus-visible {
+  outline: 2px solid var(--md-primary);
+  outline-offset: 2px;
+}
+
+/* Thin neutral scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--md-outline-variant);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-outline);
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── MD3 components ─────────────────────────────────────────────────────── */
+@layer components {
+  /* Buttons — pill shaped, compact (dense tool UI) */
+  .md-btn-filled,
+  .md-btn-tonal,
+  .md-btn-outlined,
+  .md-btn-text,
+  .md-btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 h-8 px-4 rounded-full
+      text-sm font-medium select-none whitespace-nowrap align-middle
+      transition-[background-color,box-shadow] duration-150
+      disabled:opacity-40 disabled:pointer-events-none cursor-pointer;
+  }
+  .md-btn-filled {
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+  }
+  .md-btn-filled:hover {
+    background: color-mix(in srgb, var(--md-primary) 92%, var(--md-on-primary));
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+  }
+  .md-btn-filled:active {
+    background: color-mix(in srgb, var(--md-primary) 88%, var(--md-on-primary));
+    box-shadow: none;
+  }
+  .md-btn-tonal {
+    background: var(--md-secondary-container);
+    color: var(--md-on-secondary-container);
+  }
+  .md-btn-tonal:hover {
+    background: color-mix(
+      in srgb,
+      var(--md-secondary-container) 92%,
+      var(--md-on-secondary-container)
+    );
+  }
+  .md-btn-outlined {
+    border: 1px solid var(--md-outline);
+    color: var(--md-primary);
+    background: transparent;
+  }
+  .md-btn-outlined:hover {
+    background: color-mix(in srgb, var(--md-primary) 8%, transparent);
+  }
+  .md-btn-text {
+    @apply px-3;
+    color: var(--md-primary);
+    background: transparent;
+  }
+  .md-btn-text:hover {
+    background: color-mix(in srgb, var(--md-primary) 8%, transparent);
+  }
+  .md-btn-danger {
+    background: var(--md-error);
+    color: var(--md-on-error);
+  }
+  .md-btn-danger:hover {
+    background: color-mix(in srgb, var(--md-error) 92%, var(--md-on-error));
+  }
+  .md-btn-sm {
+    @apply h-7 px-3 text-xs;
+  }
+
+  /* Icon button */
+  .md-icon-btn {
+    @apply inline-grid place-items-center h-8 w-8 rounded-full cursor-pointer
+      transition-colors duration-150;
+    color: var(--md-on-surface-variant);
+  }
+  .md-icon-btn:hover {
+    background: color-mix(in srgb, var(--md-on-surface-variant) 10%, transparent);
+  }
+
+  /* Chips — assist / filter */
+  .md-chip {
+    @apply inline-flex items-center gap-1 h-7 px-3 rounded-lg text-xs font-medium
+      select-none whitespace-nowrap cursor-pointer transition-colors duration-150;
+    border: 1px solid var(--md-outline-variant);
+    color: var(--md-on-surface-variant);
+    background: transparent;
+  }
+  .md-chip:hover {
+    background: color-mix(in srgb, var(--md-on-surface-variant) 8%, transparent);
+  }
+  .md-chip-selected {
+    border-color: transparent;
+    background: var(--md-secondary-container);
+    color: var(--md-on-secondary-container);
+  }
+  .md-chip-selected:hover {
+    background: color-mix(
+      in srgb,
+      var(--md-secondary-container) 90%,
+      var(--md-on-secondary-container)
+    );
+  }
+  /* Static info chip (no pointer affordance) */
+  .md-chip-static {
+    @apply inline-flex items-center gap-1 h-7 px-3 rounded-lg text-xs
+      select-none whitespace-nowrap;
+    background: var(--md-surface-container);
+    color: var(--md-on-surface-variant);
+  }
+
+  /* Cards */
+  .md-card {
+    background: var(--md-surface-container-lowest);
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+  }
+  .md-card-outlined {
+    background: var(--md-surface-container-lowest);
+    border-radius: 12px;
+    border: 1px solid var(--md-outline-variant);
+  }
+  .md-card-filled {
+    background: var(--md-surface-container-low);
+    border-radius: 12px;
+  }
+
+  /* Text fields / selects */
+  .md-field {
+    @apply h-8 px-3 rounded-lg text-sm transition-[border-color,box-shadow];
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-container-lowest);
+    color: var(--md-on-surface);
+  }
+  .md-field::placeholder {
+    color: var(--md-outline);
+  }
+  .md-field:focus {
+    outline: none;
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 1px var(--md-primary);
+  }
+  textarea.md-field {
+    @apply h-auto py-2;
+  }
+
+  /* Switch (single-element, MD3 morphing thumb) */
+  input[type='checkbox'].md-switch {
+    appearance: none;
+    position: relative;
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--md-surface-container-highest);
+    border: 2px solid var(--md-outline);
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+  }
+  input[type='checkbox'].md-switch::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--md-outline);
+    transition: all 0.15s ease;
+  }
+  input[type='checkbox'].md-switch:checked {
+    background: var(--md-primary);
+    border-color: var(--md-primary);
+  }
+  input[type='checkbox'].md-switch:checked::before {
+    top: 0;
+    left: 14px;
+    width: 16px;
+    height: 16px;
+    background: var(--md-on-primary);
+  }
+
+  /* Checkboxes / radios / sliders pick up the primary */
+  input[type='checkbox']:not(.md-switch),
+  input[type='radio'],
+  input[type='range'] {
+    accent-color: var(--md-primary);
+  }
+
+  .md-divider {
+    border-color: var(--md-outline-variant);
+  }
+}
+
+/* ── Graph canvas ────────────────────────────────────────────────────────── */
 .cy-container {
   width: 100%;
   height: 100%;
   min-height: 400px;
 }
 
-/* PDF.js text layer — transparent selectable overlay over canvas */
+.cy-canvas {
+  border-radius: 16px;
+  border: 1px solid var(--md-outline-variant);
+  background-color: var(--md-surface-container-lowest);
+  background-image: radial-gradient(var(--md-surface-container-high) 1px, transparent 1px);
+  background-size: 22px 22px;
+  overflow: hidden;
+}
+
+/* ── PDF.js text layer — transparent selectable overlay over canvas ─────── */
 .textLayer {
   position: absolute;
   text-align: initial;
@@ -42,11 +312,11 @@ body {
 }
 
 .textLayer ::selection {
-  background: rgb(37 99 235 / 0.28);
+  background: rgb(11 87 208 / 0.28);
 }
 
 .textLayer ::-moz-selection {
-  background: rgb(37 99 235 / 0.28);
+  background: rgb(11 87 208 / 0.28);
 }
 
 .textLayer .endOfContent {
