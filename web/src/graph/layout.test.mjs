@@ -22,6 +22,11 @@ function lodFromZoom(zoom, z1 = 0.6, z2 = 1.2) {
   if (zoom < z2) return 'mid';
   return 'near';
 }
+function labelFontSizeForZoom(zoom, selected = false) {
+  const safeZoom = Math.max(0.45, Math.min(3, zoom));
+  const base = selected ? 9 : 8;
+  return Math.max(2.2, Math.min(14, base / Math.pow(safeZoom, 1.15)));
+}
 function topNeighborMap(scores, topK = 4, minScore = 0) {
   const out = new Map();
   for (const [workId, neighbors] of scores) {
@@ -313,6 +318,9 @@ assert.ok(Math.abs(springLength(0.5) - (160 + 560 * 0.25)) < 1e-9);
 assert.equal(lodFromZoom(0.3), 'far');
 assert.equal(lodFromZoom(0.9), 'mid');
 assert.equal(lodFromZoom(1.5), 'near');
+assert.ok(labelFontSizeForZoom(2) < labelFontSizeForZoom(1));
+assert.ok(labelFontSizeForZoom(3) < labelFontSizeForZoom(2));
+assert.ok(labelFontSizeForZoom(2, true) > labelFontSizeForZoom(2));
 assert.deepEqual(seedPosition('abc'), seedPosition('abc'));
 assert.notDeepEqual(seedPosition('abc'), seedPosition('xyz'));
 assert.equal(semanticGroupOf('improves_on'), 'method');

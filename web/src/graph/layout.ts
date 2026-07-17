@@ -394,6 +394,13 @@ export function lodFromZoom(zoom: number, z1 = 0.6, z2 = 1.2): 'far' | 'mid' | '
   return 'near';
 }
 
+/** Keep labels roughly screen-sized, then shrink them slightly at high zoom. */
+export function labelFontSizeForZoom(zoom: number, selected = false): number {
+  const safeZoom = Math.max(0.45, Math.min(3, zoom));
+  const base = selected ? 9 : 8;
+  return Math.max(2.2, Math.min(14, base / Math.pow(safeZoom, 1.15)));
+}
+
 export interface EdgeBundle {
   key: string;
   source_id: string;
@@ -506,6 +513,7 @@ export const __test = {
   springLength,
   seedPosition,
   lodFromZoom,
+  labelFontSizeForZoom,
   combineNeighbors,
   aspectNeighborMap,
   topNeighborMap,

@@ -64,7 +64,7 @@ export const cyStylesheet = [
       'text-outline-width': 2.5,
       'text-outline-color': COLORS.labelOutline,
       'text-outline-opacity': 0.95,
-      'min-zoomed-font-size': 8,
+      'min-zoomed-font-size': 5,
       width: 13,
       height: 13,
       'border-width': 1.5,
