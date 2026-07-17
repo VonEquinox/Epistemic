@@ -39,6 +39,11 @@ cargo run -p epistemic-worker   # 后台任务
 cd ../web
 npm install
 npm run dev                     # :5173（开发代理转发 /api → :8080）
+
+# 5. 官网（可选）
+cd ../landing
+npm install
+npm run dev                     # :5174 产品介绍页
 ```
 
 首次运行：设 `BOOTSTRAP_ADMIN_EMAIL` 等变量可在空库时自动建管理员；`scripts/seed_fixtures.sql` 可灌 11 篇经典论文样例数据。
@@ -59,7 +64,8 @@ npm run dev                     # :5173（开发代理转发 /api → :8080）
 ```
 docs/PROJECT.md       # 唯一文档
 server/crates/{core,api,worker,llm,mcp}/
-web/                  # Vite + React SPA
+web/                  # Vite + React SPA（应用）
+landing/              # 公开官网 / 产品介绍页
 deploy/               # docker-compose、Caddyfile、backup.sh
 scripts/              # seed_fixtures.sql、requeue_aspect_pipeline.sql
 testset/              # 金标测试集（11 篇）+ eval_gold.py

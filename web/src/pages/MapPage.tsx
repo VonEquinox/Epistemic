@@ -55,7 +55,7 @@ export function MapPage() {
   const lod = useUiStore((s) => s.lod);
   const nav = useNavigate();
   const [viewName, setViewName] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(true);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const { data: views } = useSavedViews();
   const createView = useCreateSavedView();
   const deleteView = useDeleteSavedView();

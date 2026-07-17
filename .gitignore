@@ -7,6 +7,9 @@ web/node_modules/
 web/dist/
 web/.vite/
 web/src/api/generated/
+landing/node_modules/
+landing/dist/
+landing/.vite/
 
 # Env & secrets
 .env
