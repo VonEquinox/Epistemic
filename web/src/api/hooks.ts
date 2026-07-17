@@ -340,6 +340,17 @@ export function useCreateAnnotation(workId: string) {
   });
 }
 
+export function useDeleteAnnotation(workId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete<{ ok: boolean }>(`/annotations/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['annotations', workId] });
+      qc.invalidateQueries({ queryKey: ['work', workId] });
+    },
+  });
+}
+
 export function useNodeComments(graphId: string | null | undefined, workId: string | undefined) {
   return useQuery({
     queryKey: ['node-comments', graphId, workId],

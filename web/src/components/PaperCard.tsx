@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type {
   AnnotationKind,
   Claim,
@@ -18,6 +18,8 @@ import {
   useClaimJudgment,
   useClaimsFull,
   useCreateAnnotation,
+  useDeleteAnnotation,
+  useMe,
   useRequeueJob,
   useSetReading,
 } from '../api/hooks';
@@ -169,6 +171,67 @@ function EvidenceLinks({
         </button>
       ))}
     </div>
+  );
+}
+
+/** Collapsible block used by paper-card major sections / aspect cards. */
+function Collapsible({
+  title,
+  count,
+  defaultOpen = true,
+  children,
+  level = 'section',
+}: {
+  title: string;
+  count?: number;
+  defaultOpen?: boolean;
+  children: ReactNode;
+  level?: 'section' | 'sub';
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isSection = level === 'section';
+  return (
+    <section className={isSection ? undefined : undefined}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={`group flex w-full items-center gap-1.5 text-left ${
+          isSection
+            ? 'border-b border-outline-variant pb-1 mb-2'
+            : 'mb-1'
+        }`}
+      >
+        <span
+          className={`inline-flex shrink-0 text-on-surface-variant transition-transform duration-150 ${
+            open ? 'rotate-90' : ''
+          }`}
+          aria-hidden
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4.5 2.5L8 6l-3.5 3.5V2.5z" />
+          </svg>
+        </span>
+        <span
+          className={
+            isSection
+              ? 'text-xs font-medium tracking-wide text-on-surface-variant uppercase'
+              : 'text-xs font-medium text-on-surface-variant'
+          }
+        >
+          {title}
+        </span>
+        {typeof count === 'number' && (
+          <span className="text-xs font-normal text-on-surface-variant/80">
+            ({count})
+          </span>
+        )}
+        <span className="ml-auto text-[10px] text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">
+          {open ? '收起' : '展开'}
+        </span>
+      </button>
+      {open && children}
+    </section>
   );
 }
 
@@ -328,6 +391,8 @@ export function PaperCard({
   const workId = card.work.id;
   const setReading = useSetReading(workId);
   const createAnn = useCreateAnnotation(workId);
+  const deleteAnn = useDeleteAnnotation(workId);
+  const { data: me } = useMe();
   const { data: annotations } = useAnnotations(workId);
   const { data: claimsFull } = useClaimsFull(workId);
   const requeue = useRequeueJob(workId);
@@ -454,16 +519,22 @@ export function PaperCard({
       </header>
 
       {v?.abstract_text && (
-        <section>
-          <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">摘要</h2>
+        <Collapsible title="摘要" defaultOpen>
           <p className="text-on-surface leading-relaxed">{v.abstract_text}</p>
-        </section>
+        </Collapsible>
       )}
 
       {card.aspects && card.aspects.length > 0 && (
-        <section>
-          <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">多层分析</h2>
-          <div className="space-y-3">
+        <Collapsible
+          title="多层分析"
+          count={card.aspects.filter(
+            (a) =>
+              a.summary?.trim() ||
+              (Array.isArray(a.bullets) && a.bullets.length > 0),
+          ).length}
+          defaultOpen
+        >
+          <div className="space-y-2">
             {card.aspects.map((a) => {
               const bullets = Array.isArray(a.bullets)
                 ? (a.bullets as unknown[]).filter(
@@ -473,37 +544,46 @@ export function PaperCard({
               if (!a.summary?.trim() && bullets.length === 0) return null;
               return (
                 <div key={a.aspect} className="md-card-filled p-3 rounded-xl">
-                  <h3 className="text-sm font-medium text-on-surface mb-1">
-                    {aspectByKey(a.aspect)?.label ?? a.aspect}
-                  </h3>
-                  {a.summary?.trim() && (
-                    <p className="text-on-surface leading-relaxed">{a.summary}</p>
-                  )}
-                  {bullets.length > 0 && (
-                    <ul className="mt-1 list-disc pl-4 text-on-surface-variant space-y-0.5">
-                      {bullets.map((b, i) => (
-                        <li key={i}>{b}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {a.source_text?.trim() && (
-                    <p className="mt-1 text-xs text-on-surface-variant italic">
-                      “{a.source_text.slice(0, 160)}
-                      {a.source_text.length > 160 ? '…' : ''}”
-                      {a.page > 0 ? ` · p.${a.page}` : ''}
-                    </p>
-                  )}
+                  <Collapsible
+                    title={aspectByKey(a.aspect)?.label ?? a.aspect}
+                    level="sub"
+                    defaultOpen={false}
+                  >
+                    {a.summary?.trim() && (
+                      <p className="text-on-surface leading-relaxed">{a.summary}</p>
+                    )}
+                    {bullets.length > 0 && (
+                      <ul className="mt-1 list-disc pl-4 text-on-surface-variant space-y-0.5">
+                        {bullets.map((b, i) => (
+                          <li key={i}>{b}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {a.source_text?.trim() && (
+                      <p className="mt-1 text-xs text-on-surface-variant italic">
+                        “{a.source_text.slice(0, 160)}
+                        {a.source_text.length > 160 ? '…' : ''}”
+                        {a.page > 0 ? ` · p.${a.page}` : ''}
+                      </p>
+                    )}
+                  </Collapsible>
                 </div>
               );
             })}
           </div>
-        </section>
+        </Collapsible>
       )}
 
       {/* ─── 研究 ─── */}
-      <section>
-        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">研究</h2>
-
+      <Collapsible
+        title="研究"
+        count={
+          dnaFields.length +
+          (card.methods.length > 0 ? 1 : 0) +
+          (claimsWithJudgments.length > 0 ? claimsWithJudgments.length : 0)
+        }
+        defaultOpen
+      >
         {dnaFields.length === 0 &&
           claimsWithJudgments.length === 0 &&
           card.methods.length === 0 && (
@@ -514,61 +594,77 @@ export function PaperCard({
 
         {dnaFields.map((f) => (
           <div key={f.key} className="mb-3">
-            <h3 className="text-xs font-medium text-on-surface-variant mb-1">{f.label}</h3>
-            <ul className="space-y-1">
-              {f.items.map((e) => (
-                <li key={e.id}>
-                  <button
-                    type="button"
-                    onClick={() => onJumpEvidence?.(e)}
-                    className="text-left text-on-surface hover:text-primary"
-                  >
-                    {e.text}
-                  </button>
-                  <span className="ml-1 text-xs text-primary">p.{e.page} ↗</span>
-                </li>
-              ))}
-            </ul>
+            <Collapsible
+              title={f.label}
+              count={f.items.length}
+              level="sub"
+              defaultOpen
+            >
+              <ul className="space-y-1">
+                {f.items.map((e) => (
+                  <li key={e.id}>
+                    <button
+                      type="button"
+                      onClick={() => onJumpEvidence?.(e)}
+                      className="text-left text-on-surface hover:text-primary"
+                    >
+                      {e.text}
+                    </button>
+                    <span className="ml-1 text-xs text-primary">p.{e.page} ↗</span>
+                  </li>
+                ))}
+              </ul>
+            </Collapsible>
           </div>
         ))}
 
         {card.methods.length > 0 && (
           <div className="mb-3">
-            <h3 className="text-xs font-medium text-on-surface-variant mb-1">方法与组件</h3>
-            <ul className="space-y-2">
-              {card.methods.map((m) => {
-                const evs = (card.evidence ?? []).filter(
-                  (e) => e.extraction_field === `method:${m.name}`,
-                );
-                return (
-                  <li key={m.id}>
-                    <span className="font-medium text-on-surface">{m.name}</span>
-                    {m.description && (
-                      <span className="text-on-surface-variant"> — {m.description}</span>
-                    )}
-                    <EvidenceLinks items={evs} onJump={onJumpEvidence} />
-                  </li>
-                );
-              })}
-            </ul>
+            <Collapsible
+              title="方法与组件"
+              count={card.methods.length}
+              level="sub"
+              defaultOpen
+            >
+              <ul className="space-y-2">
+                {card.methods.map((m) => {
+                  const evs = (card.evidence ?? []).filter(
+                    (e) => e.extraction_field === `method:${m.name}`,
+                  );
+                  return (
+                    <li key={m.id}>
+                      <span className="font-medium text-on-surface">{m.name}</span>
+                      {m.description && (
+                        <span className="text-on-surface-variant"> — {m.description}</span>
+                      )}
+                      <EvidenceLinks items={evs} onJump={onJumpEvidence} />
+                    </li>
+                  );
+                })}
+              </ul>
+            </Collapsible>
           </div>
         )}
 
         {claimsWithJudgments.length > 0 && (
           <div>
-            <h3 className="text-xs font-medium text-on-surface-variant mb-1">
-              主要结论（Claims）
-            </h3>
-            <ul className="space-y-3">
-              {claimsWithJudgments.map((c) => (
-                <ClaimItem
-                  key={c.id}
-                  claim={c}
-                  evidence={evidenceForClaim(c.id)}
-                  onJumpEvidence={onJumpEvidence}
-                />
-              ))}
-            </ul>
+            <Collapsible
+              title="主要结论（Claims）"
+              count={claimsWithJudgments.length}
+              level="sub"
+              defaultOpen
+            >
+              <ul className="space-y-3">
+                {claimsWithJudgments.map((c) => (
+                  <ClaimItem
+                    key={c.id}
+                    claim={c}
+                    evidence={evidenceForClaim(c.id)}
+                    onJumpEvidence={onJumpEvidence}
+                  />
+                ))}
+              </ul>
+            </Collapsible>
           </div>
         )}
 
@@ -586,193 +682,47 @@ export function PaperCard({
             ].includes(e.extraction_field),
         ).length > 0 && (
           <div className="mt-3">
-            <h3 className="text-xs font-medium text-on-surface-variant mb-1">其他字段证据</h3>
-            <ul className="space-y-1">
-              {(card.evidence ?? [])
-                .filter(
-                  (e) =>
-                    !e.claim_id &&
-                    e.extraction_field &&
-                    !e.extraction_field.startsWith('method:') &&
-                    ![
-                      'research_question',
-                      'contributions',
-                      'datasets',
-                      'limitations',
-                    ].includes(e.extraction_field!),
-                )
-                .map((e) => (
-                  <li key={e.id}>
-                    <button
-                      type="button"
-                      onClick={() => onJumpEvidence?.(e)}
-                      className="text-xs text-left text-on-surface-variant hover:text-primary"
-                    >
-                      <span className="font-mono text-on-surface-variant">
-                        {e.extraction_field}
-                      </span>{' '}
-                      p.{e.page}: {e.text.slice(0, 60)}
-                    </button>
-                  </li>
-                ))}
-            </ul>
+            <Collapsible title="其他字段证据" level="sub" defaultOpen={false}>
+              <ul className="space-y-1">
+                {(card.evidence ?? [])
+                  .filter(
+                    (e) =>
+                      !e.claim_id &&
+                      e.extraction_field &&
+                      !e.extraction_field.startsWith('method:') &&
+                      ![
+                        'research_question',
+                        'contributions',
+                        'datasets',
+                        'limitations',
+                      ].includes(e.extraction_field!),
+                  )
+                  .map((e) => (
+                    <li key={e.id}>
+                      <button
+                        type="button"
+                        onClick={() => onJumpEvidence?.(e)}
+                        className="text-xs text-left text-on-surface-variant hover:text-primary"
+                      >
+                        <span className="font-mono text-on-surface-variant">
+                          {e.extraction_field}
+                        </span>{' '}
+                        p.{e.page}: {e.text.slice(0, 60)}
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            </Collapsible>
           </div>
         )}
-      </section>
-
-      {/* ─── 团队 ─── */}
-      <section>
-        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">团队</h2>
-
-        <div className="mb-3">
-          <h3 className="text-xs font-medium text-on-surface-variant mb-1">阅读状态</h3>
-          <div className="flex flex-wrap gap-1.5">
-            {levels.map((s) => (
-              <button
-                key={s}
-                onClick={() => setReading.mutate({ status: s })}
-                className="md-chip"
-              >
-                <StatusDot status={s} />
-              </button>
-            ))}
-          </div>
-          {card.reading.length > 0 && (
-            <ul className="mt-2 space-y-1 text-on-surface-variant">
-              {card.reading.map((r) => (
-                <li key={r.user_id} className="flex items-center gap-1">
-                  <StatusDot status={r.status} />
-                  {r.starred && <span className="text-primary">★</span>}
-                  <span className="text-xs text-on-surface-variant font-mono">
-                    {r.user_id.slice(0, 8)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div>
-          <h3 className="text-xs font-medium text-on-surface-variant mb-1">
-            批注 ({card.annotations_count}
-            {annotations ? ` · 已加载 ${annotations.length}` : ''})
-          </h3>
-
-          {annotations && annotations.length > 0 && (
-            <ul className="mb-2 space-y-2">
-              {annotations.map((a) => (
-                <li
-                  key={a.id}
-                  className={`bg-surface-container-low rounded-xl p-2 text-xs ${
-                    a.parent_id ? 'ml-4 border-l-2 border-outline-variant' : ''
-                  }`}
-                >
-                  <div className="text-on-surface-variant mb-0.5 flex flex-wrap gap-1 items-center">
-                    <span>
-                      {ANN_KINDS.find((k) => k.value === a.kind)?.label ?? a.kind}
-                    </span>
-                    <span>·</span>
-                    <span>
-                      {VISIBILITIES.find((v) => v.value === a.visibility)
-                        ?.label ?? a.visibility}
-                    </span>
-                    <span>·</span>
-                    <span>{new Date(a.created_at).toLocaleString()}</span>
-                    <button
-                      type="button"
-                      className="ml-auto text-primary hover:underline"
-                      onClick={() => setReplyTo(a.id)}
-                    >
-                      回复
-                    </button>
-                  </div>
-                  <p className="text-on-surface whitespace-pre-wrap">{a.body}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <form
-            className="space-y-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!note.trim()) return;
-              createAnn.mutate(
-                {
-                  body: note,
-                  kind: annKind,
-                  visibility: annVis,
-                  parent_id: replyTo,
-                },
-                {
-                  onSuccess: () => {
-                    setNote('');
-                    setReplyTo(null);
-                  },
-                },
-              );
-            }}
-          >
-            <div className="flex flex-wrap gap-2">
-              <select
-                className="md-field text-xs"
-                value={annKind}
-                onChange={(e) => setAnnKind(e.target.value as AnnotationKind)}
-              >
-                {ANN_KINDS.map((k) => (
-                  <option key={k.value} value={k.value}>
-                    {k.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="md-field text-xs"
-                value={annVis}
-                onChange={(e) => setAnnVis(e.target.value as Visibility)}
-              >
-                {VISIBILITIES.map((vis) => (
-                  <option key={vis.value} value={vis.value}>
-                    {vis.label}
-                  </option>
-                ))}
-              </select>
-              {replyTo && (
-                <span className="inline-flex items-center gap-1 text-xs text-on-surface-variant">
-                  回复中
-                  <button
-                    type="button"
-                    className="text-error hover:underline"
-                    onClick={() => setReplyTo(null)}
-                  >
-                    取消
-                  </button>
-                </span>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <input
-                className="md-field flex-1"
-                placeholder={
-                  replyTo ? '写一条回复…' : '写一条批注（笔记 / 猜想 / 问题）…'
-                }
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-              />
-              <button
-                type="submit"
-                disabled={createAnn.isPending}
-                className="md-btn-filled md-btn-sm self-center"
-              >
-                发送
-              </button>
-            </div>
-          </form>
-        </div>
-      </section>
+      </Collapsible>
 
       {/* ─── 图谱 ─── */}
-      <section>
-        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">图谱</h2>
+      <Collapsible
+        title="图谱"
+        count={(card.relations ?? []).filter((r) => r.relation.type !== 'cites').length}
+        defaultOpen
+      >
         {(card.relations ?? []).filter((r) => r.relation.type !== 'cites')
           .length === 0 ? (
           <p className="text-xs text-on-surface-variant">暂无断言关系</p>
@@ -783,79 +733,83 @@ export function PaperCard({
               if (items.length === 0) return null;
               return (
                 <div key={g.key}>
-                  <h3 className="text-xs font-medium text-on-surface-variant mb-1">
-                    {g.label}
-                    <span className="ml-1 font-normal">
-                      ({items.length})
-                    </span>
-                  </h3>
-                  <ul className="space-y-2">
-                    {items.map((rd) => (
-                      <li
-                        key={rd.relation.id}
-                        className="md-card-outlined p-2"
-                      >
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <RelationBadge
-                            type={rd.relation.type}
-                            status={rd.relation.review_status}
-                          />
-                          {rd.relation.aspect && (
-                            <span className="text-xs text-on-surface-variant">
-                              {rd.relation.aspect}
-                            </span>
-                          )}
-                          {rd.relation.confidence != null && (
-                            <span className="text-xs text-on-surface-variant">
-                              conf {(rd.relation.confidence * 100).toFixed(0)}%
-                            </span>
-                          )}
-                        </div>
-                        {rd.relation.explanation && (
-                          <p className="text-on-surface text-xs leading-relaxed">
-                            {rd.relation.explanation}
-                          </p>
-                        )}
-                        {rd.evidence.length > 0 && (
-                          <div className="mt-1 space-y-0.5">
-                            {rd.evidence.map((e) => (
-                              <button
-                                key={e.id}
-                                type="button"
-                                onClick={() =>
-                                  onJumpEvidence?.({
-                                    id: e.id,
-                                    version_id: e.version_id,
-                                    page: e.page,
-                                    text: e.text,
-                                    bbox: e.bbox,
-                                    created_at: '',
-                                    relation_id: rd.relation.id,
-                                  })
-                                }
-                                className="block text-left text-xs text-primary hover:underline"
-                              >
-                                证据 p.{e.page}: “
-                                {e.text.slice(0, 80)}
-                                {e.text.length > 80 ? '…' : ''}”
-                                {' ↗'}
-                              </button>
-                            ))}
+                  <Collapsible
+                    title={g.label}
+                    count={items.length}
+                    level="sub"
+                    defaultOpen
+                  >
+                    <ul className="space-y-2">
+                      {items.map((rd) => (
+                        <li
+                          key={rd.relation.id}
+                          className="md-card-outlined p-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <RelationBadge
+                              type={rd.relation.type}
+                              status={rd.relation.review_status}
+                            />
+                            {rd.relation.aspect && (
+                              <span className="text-xs text-on-surface-variant">
+                                {rd.relation.aspect}
+                              </span>
+                            )}
+                            {rd.relation.confidence != null && (
+                              <span className="text-xs text-on-surface-variant">
+                                conf {(rd.relation.confidence * 100).toFixed(0)}%
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                          {rd.relation.explanation && (
+                            <p className="text-on-surface text-xs leading-relaxed">
+                              {rd.relation.explanation}
+                            </p>
+                          )}
+                          {rd.evidence.length > 0 && (
+                            <div className="mt-1 space-y-0.5">
+                              {rd.evidence.map((e) => (
+                                <button
+                                  key={e.id}
+                                  type="button"
+                                  onClick={() =>
+                                    onJumpEvidence?.({
+                                      id: e.id,
+                                      version_id: e.version_id,
+                                      page: e.page,
+                                      text: e.text,
+                                      bbox: e.bbox,
+                                      created_at: '',
+                                      relation_id: rd.relation.id,
+                                    })
+                                  }
+                                  className="block text-left text-xs text-primary hover:underline"
+                                >
+                                  证据 p.{e.page}: “
+                                  {e.text.slice(0, 80)}
+                                  {e.text.length > 80 ? '…' : ''}”
+                                  {' ↗'}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </Collapsible>
                 </div>
               );
             })}
           </div>
         )}
-      </section>
+      </Collapsible>
 
       {/* ─── 管线 ─── */}
-      <section>
-        <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1 mb-2">管线</h2>
+      <Collapsible
+        title="管线"
+        count={pipeline.length}
+        defaultOpen={false}
+      >
         {pipeline.length === 0 ? (
           <p className="text-xs text-on-surface-variant">暂无任务记录</p>
         ) : (
@@ -915,7 +869,186 @@ export function PaperCard({
             重试失败：{(requeue.error as Error).message}
           </p>
         )}
-      </section>
+      </Collapsible>
+
+      {/* ─── 团队 ─── */}
+      <Collapsible
+        title="团队"
+        count={
+          (annotations?.length ?? card.annotations_count ?? 0) +
+          card.reading.length
+        }
+        defaultOpen
+      >
+        <div className="mb-3">
+          <Collapsible title="阅读状态" level="sub" defaultOpen>
+            <div className="flex flex-wrap gap-1.5">
+              {levels.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setReading.mutate({ status: s })}
+                  className="md-chip"
+                >
+                  <StatusDot status={s} />
+                </button>
+              ))}
+            </div>
+            {card.reading.length > 0 && (
+              <ul className="mt-2 space-y-1 text-on-surface-variant">
+                {card.reading.map((r) => (
+                  <li key={r.user_id} className="flex items-center gap-1">
+                    <StatusDot status={r.status} />
+                    {r.starred && <span className="text-primary">★</span>}
+                    <span className="text-xs text-on-surface-variant font-mono">
+                      {r.user_id.slice(0, 8)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Collapsible>
+        </div>
+
+        <div>
+          <Collapsible
+            title="批注"
+            count={annotations?.length ?? card.annotations_count}
+            level="sub"
+            defaultOpen
+          >
+            {annotations && annotations.length > 0 && (
+              <ul className="mb-2 space-y-2">
+                {annotations.map((a) => (
+                  <li
+                    key={a.id}
+                    className={`bg-surface-container-low rounded-xl p-2 text-xs ${
+                      a.parent_id ? 'ml-4 border-l-2 border-outline-variant' : ''
+                    }`}
+                  >
+                    <div className="text-on-surface-variant mb-0.5 flex flex-wrap gap-1 items-center">
+                      <span>
+                        {ANN_KINDS.find((k) => k.value === a.kind)?.label ?? a.kind}
+                      </span>
+                      <span>·</span>
+                      <span>
+                        {VISIBILITIES.find((v) => v.value === a.visibility)
+                          ?.label ?? a.visibility}
+                      </span>
+                      <span>·</span>
+                      <span>{new Date(a.created_at).toLocaleString()}</span>
+                      <div className="ml-auto flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="text-primary hover:underline"
+                          onClick={() => setReplyTo(a.id)}
+                        >
+                          回复
+                        </button>
+                        {me?.id === a.user_id && (
+                          <button
+                            type="button"
+                            className="text-error hover:underline"
+                            disabled={deleteAnn.isPending}
+                            onClick={() => {
+                              if (!window.confirm('删除这条批注？')) return;
+                              deleteAnn.mutate(a.id);
+                            }}
+                          >
+                            删除
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-on-surface whitespace-pre-wrap">{a.body}</p>
+                    {deleteAnn.isError && me?.id === a.user_id && (
+                      <p className="mt-1 text-xs text-error">
+                        删除失败：{(deleteAnn.error as Error).message}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <form
+              className="space-y-1.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!note.trim()) return;
+                createAnn.mutate(
+                  {
+                    body: note,
+                    kind: annKind,
+                    visibility: annVis,
+                    parent_id: replyTo,
+                  },
+                  {
+                    onSuccess: () => {
+                      setNote('');
+                      setReplyTo(null);
+                    },
+                  },
+                );
+              }}
+            >
+              <div className="flex flex-wrap gap-2">
+                <select
+                  className="md-field text-xs"
+                  value={annKind}
+                  onChange={(e) => setAnnKind(e.target.value as AnnotationKind)}
+                >
+                  {ANN_KINDS.map((k) => (
+                    <option key={k.value} value={k.value}>
+                      {k.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="md-field text-xs"
+                  value={annVis}
+                  onChange={(e) => setAnnVis(e.target.value as Visibility)}
+                >
+                  {VISIBILITIES.map((vis) => (
+                    <option key={vis.value} value={vis.value}>
+                      {vis.label}
+                    </option>
+                  ))}
+                </select>
+                {replyTo && (
+                  <span className="inline-flex items-center gap-1 text-xs text-on-surface-variant">
+                    回复中
+                    <button
+                      type="button"
+                      className="text-error hover:underline"
+                      onClick={() => setReplyTo(null)}
+                    >
+                      取消
+                    </button>
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="md-field flex-1"
+                  placeholder={
+                    replyTo ? '写一条回复…' : '写一条批注（笔记 / 猜想 / 问题）…'
+                  }
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  disabled={createAnn.isPending}
+                  className="md-btn-filled md-btn-sm self-center"
+                >
+                  发送
+                </button>
+              </div>
+            </form>
+          </Collapsible>
+        </div>
+      </Collapsible>
+
     </div>
   );
 }

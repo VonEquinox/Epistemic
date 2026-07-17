@@ -3,6 +3,8 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import {
   useAnnotations,
   useCreateAnnotation,
+  useDeleteAnnotation,
+  useMe,
   usePromoteClaim,
   useWork,
 } from '../api/hooks';
@@ -33,6 +35,8 @@ export function PaperDetailPage() {
   const [activeEv, setActiveEv] = useState<string | null>(sp.get('evidence'));
   const promote = usePromoteClaim();
   const createAnn = useCreateAnnotation(id ?? '');
+  const deleteAnn = useDeleteAnnotation(id ?? '');
+  const { data: me } = useMe();
   const qc = useQueryClient();
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState('');
@@ -116,8 +120,6 @@ export function PaperDetailPage() {
           }}
         />
 
-        <NodeComments graphId={graphId} workId={data.work.id} />
-
         <section className="mt-6 space-y-3">
           <h2 className="text-xs font-medium tracking-wide text-on-surface-variant uppercase border-b border-outline-variant pb-1">
             PDF 批注{anns ? ` (${anns.length})` : ''}
@@ -135,6 +137,12 @@ export function PaperDetailPage() {
               replying={replyingTo === a.id}
               replyBody={replyBody}
               replyPending={createAnn.isPending}
+              canDelete={me?.id === a.user_id}
+              deletePending={deleteAnn.isPending}
+              onDelete={() => {
+                if (!window.confirm('删除这条批注？')) return;
+                deleteAnn.mutate(a.id);
+              }}
               onJump={() => {
                 const anchor = a.anchor as
                   | { page?: number; text?: string; bbox?: unknown }
@@ -161,6 +169,8 @@ export function PaperDetailPage() {
             />
           ))}
         </section>
+
+        <NodeComments graphId={graphId} workId={data.work.id} />
       </div>
       <div className="flex-1 min-w-0 min-h-0">
         <PdfViewer
@@ -213,22 +223,28 @@ function AnnotationItem({
   replying,
   replyBody,
   replyPending,
+  canDelete,
+  deletePending,
   onJump,
   onStartReply,
   onCancelReply,
   onChangeReply,
   onSubmitReply,
+  onDelete,
 }: {
   ann: Annotation;
   replies: Annotation[];
   replying: boolean;
   replyBody: string;
   replyPending: boolean;
+  canDelete: boolean;
+  deletePending: boolean;
   onJump: () => void;
   onStartReply: () => void;
   onCancelReply: () => void;
   onChangeReply: (v: string) => void;
   onSubmitReply: () => void;
+  onDelete: () => void;
 }) {
   const anchor = ann.anchor as { page?: number; text?: string } | null | undefined;
   return (
@@ -241,6 +257,16 @@ function AnnotationItem({
           {VIS_LABEL[ann.visibility] ?? ann.visibility}
         </span>
         <span className="ml-auto">{new Date(ann.created_at).toLocaleString()}</span>
+        {canDelete && (
+          <button
+            type="button"
+            className="text-error hover:underline"
+            disabled={deletePending}
+            onClick={onDelete}
+          >
+            删除
+          </button>
+        )}
       </div>
       <p className="text-on-surface whitespace-pre-wrap">{ann.body}</p>
       {anchor?.page != null && (

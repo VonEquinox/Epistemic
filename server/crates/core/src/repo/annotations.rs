@@ -74,3 +74,16 @@ pub async fn get(pool: &PgPool, id: Uuid) -> AppResult<Annotation> {
     .await?
     .ok_or_else(|| AppError::NotFound(format!("annotation {id}")))
 }
+
+/// Author-only delete (same ownership rule as node comments).
+pub async fn delete(pool: &PgPool, id: Uuid, user_id: Uuid) -> AppResult<()> {
+    let result = sqlx::query("DELETE FROM annotations WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("annotation {id}")));
+    }
+    Ok(())
+}

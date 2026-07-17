@@ -24,6 +24,10 @@ pub fn router() -> Router<AppState> {
             get(list_annotations).post(create_annotation),
         )
         .route(
+            "/annotations/{id}",
+            axum::routing::delete(delete_annotation),
+        )
+        .route(
             "/graphs/{graph_id}/works/{work_id}/comments",
             get(list_node_comments).post(create_node_comment),
         )
@@ -99,6 +103,17 @@ async fn list_annotations(
     Ok(Json(
         annotations::list_for_work(&state.pool, id, user.id).await?,
     ))
+}
+
+async fn delete_annotation(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    // Ensure it exists (clearer error) then author-only delete.
+    let _ = annotations::get(&state.pool, id).await?;
+    annotations::delete(&state.pool, id, user.id).await?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
