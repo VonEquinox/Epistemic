@@ -13,7 +13,6 @@ import {
   seedPosition,
   topNeighborMap,
   unconnectedNodes,
-  labelFontSizeForZoom,
   lodFromZoom,
   readerBorderWidth,
   bundleEdges,
@@ -446,12 +445,6 @@ export function MapView({
       const lod = lodFromZoom(zoom);
       setLod(lod);
       cy.batch(() => {
-        cy.nodes().forEach((node) => {
-          node.style(
-            'font-size',
-            labelFontSizeForZoom(zoom, node.selected()),
-          );
-        });
         if (lod === 'far') {
           cy.nodes().style('label', '');
           cy.edges('.assertion').style('display', 'none');
@@ -526,7 +519,6 @@ export function MapView({
       applyLod(cy.zoom());
     });
     cy.on('zoom', () => applyLod(cy.zoom()));
-    cy.on('select unselect', 'node', () => applyLod(cy.zoom()));
     applySimThreshold(cy, minSimScore, drawSimilarity);
     applyLod(cy.zoom());
 
