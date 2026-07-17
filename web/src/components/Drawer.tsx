@@ -3,6 +3,7 @@ import { useWork } from '../api/hooks';
 import { PaperCard } from './PaperCard';
 import { NodeComments } from './NodeComments';
 import { Link, useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 
 export function Drawer() {
   const id = useUiStore((s) => s.selectedWorkId);
@@ -17,8 +18,8 @@ export function Drawer() {
 
   if (!open || !id) return null;
 
-  return (
-    <aside className="absolute right-0 top-0 bottom-0 w-[420px] bg-surface-container-lowest border-l border-outline-variant shadow-elev3 rounded-l-2xl z-20 flex flex-col">
+  return createPortal(
+    <aside className="fixed right-0 top-14 bottom-0 z-[100] w-[min(420px,calc(100vw-1rem))] bg-surface-container-lowest border-l border-outline-variant shadow-elev3 rounded-l-2xl flex flex-col">
       <div className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-outline-variant">
         <span className="text-sm font-medium text-on-surface">论文卡片</span>
         <div className="flex items-center gap-2">
@@ -64,6 +65,7 @@ export function Drawer() {
           </>
         )}
       </div>
-    </aside>
+    </aside>,
+    document.body,
   );
 }
