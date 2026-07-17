@@ -15,6 +15,10 @@ import {
   lodFromZoom,
   readerBorderWidth,
   bundleEdges,
+  simulateWeightedForces,
+  type ForceSimulationConfig,
+  type LayoutSpring,
+  type SimulationPosition,
 } from './layout';
 import {
   ASPECT_EDGE_BUILD_MIN,
@@ -94,7 +98,7 @@ function buildLayoutScoreMap(
 }
 
 const FCOSE_SPREAD = {
-  nodeRepulsion: () => 52000,
+  nodeRepulsion: () => 76000,
   nodeSeparation: 120,
   gravity: 0.035,
   gravityRange: 5.5,
@@ -102,6 +106,31 @@ const FCOSE_SPREAD = {
   packComponents: true,
   idealDefault: 420,
 };
+
+function captureMovablePositions(cy: Core): Map<string, SimulationPosition> {
+  const positions = new Map<string, SimulationPosition>();
+  cy.nodes().forEach((element) => {
+    const node = element as cytoscape.NodeSingular;
+    if (!node.locked()) positions.set(node.id(), { ...node.position() });
+  });
+  return positions;
+}
+
+function applyForceSimulation(
+  cy: Core,
+  basePositions: Map<string, SimulationPosition>,
+  springs: LayoutSpring[],
+  tuning: ForceSimulationConfig,
+): void {
+  const positions = simulateWeightedForces(basePositions, springs, tuning);
+  cy.batch(() => {
+    cy.nodes().forEach((element) => {
+      const node = element as cytoscape.NodeSingular;
+      const position = positions.get(node.id());
+      if (position) node.position(position);
+    });
+  });
+}
 
 export function MapView({
   data,
@@ -112,11 +141,15 @@ export function MapView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const basePositionsRef = useRef<Map<string, SimulationPosition> | null>(null);
+  const simulationSpringsRef = useRef<LayoutSpring[]>([]);
+  const tuningFrameRef = useRef<number | null>(null);
   const weights = useUiStore((s) => s.weights);
   const topicEnabled = useUiStore((s) => s.topicEnabled);
   const activeAspect = useUiStore((s) => s.activeAspect);
   const showAssertionEdges = useUiStore((s) => s.showAssertionEdges);
   const minSimScore = useUiStore((s) => s.minSimScore);
+  const forceTuning = useUiStore((s) => s.forceTuning);
   const setLod = useUiStore((s) => s.setLod);
   const assertionEdges = visibleMapEdges(
     data.edges,
@@ -186,7 +219,8 @@ export function MapView({
 
     // Only sparse layout springs go into the graph *before* fcose —
     // denser visual edges are added after layout so they don't collapse spacing.
-    for (const spring of buildLayoutSprings(layoutMap)) {
+    const layoutSprings = buildLayoutSprings(layoutMap);
+    for (const spring of layoutSprings) {
       elements.push({
         data: {
           id: `spring-${activeAspect ?? 'mix'}-${spring.key}`,
@@ -282,7 +316,7 @@ export function MapView({
           // display:none edges from its force calculation.
           selector: 'edge.layout-spring',
           style: {
-            'curve-style': 'haystack',
+            'curve-style': 'straight',
             width: 0.1,
             opacity: 0,
             'line-opacity': 0,
@@ -294,10 +328,7 @@ export function MapView({
           selector: 'edge.similarity',
           style: {
             display: 'none', // applySimThreshold turns visible ones on
-            // Bezier + control points reduce edge-on-node stacking vs haystack.
-            'curve-style': 'unbundled-bezier',
-            'control-point-distances': 28,
-            'control-point-weights': 0.5,
+            'curve-style': 'straight',
             // Width tracks similarity — stronger pairs read as firmer threads.
             width: 'mapData(score, 0.25, 0.9, 0.7, 2.2)',
             'line-color': COLORS.simEdge,
@@ -328,7 +359,7 @@ export function MapView({
           selector: 'edge.assertion',
           style: {
             display: 'none',
-            'curve-style': 'bezier',
+            'curve-style': 'straight',
             'target-arrow-shape': 'triangle',
             'arrow-scale': 0.7,
           },
@@ -369,21 +400,14 @@ export function MapView({
     });
 
     // Add denser visual edges *after* fcose so they don't act as springs.
-    if (visualEdges.length > 0) {
-      cy.add(visualEdges);
-      // Slightly different bezier bows so parallel edges don't sit on one ray.
-      cy.edges('.similarity').forEach((e) => {
-        let h = 0;
-        const id = e.id();
-        for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-        const dist = 18 + Math.abs(h % 55);
-        const sign = h & 1 ? 1 : -1;
-        e.style({
-          'control-point-distances': sign * dist,
-          'control-point-weights': 0.35 + (Math.abs(h >> 3) % 30) / 100,
-        });
-      });
-    }
+    if (visualEdges.length > 0) cy.add(visualEdges);
+
+    // Keep a stable fCoSE baseline so every slider value is directly comparable.
+    const basePositions = captureMovablePositions(cy);
+    basePositionsRef.current = basePositions;
+    simulationSpringsRef.current = layoutSprings;
+    applyForceSimulation(cy, basePositions, layoutSprings, forceTuning);
+    cy.fit(cy.nodes(), 40);
 
     const applyLod = (zoom: number) => {
       const lod = lodFromZoom(zoom);
@@ -468,8 +492,14 @@ export function MapView({
 
     cyRef.current = cy;
     return () => {
+      if (tuningFrameRef.current !== null) {
+        cancelAnimationFrame(tuningFrameRef.current);
+        tuningFrameRef.current = null;
+      }
       cy.destroy();
       cyRef.current = null;
+      basePositionsRef.current = null;
+      simulationSpringsRef.current = [];
     };
     // Re-init when data / aspect / assertion overlay changes (not minSimScore).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -481,6 +511,31 @@ export function MapView({
     if (!cy) return;
     applySimThreshold(cy, minSimScore, !!activeAspect);
   }, [minSimScore, activeAspect]);
+
+  // Re-run from the same baseline while dragging, without rebuilding fCoSE.
+  useEffect(() => {
+    const cy = cyRef.current;
+    const basePositions = basePositionsRef.current;
+    if (!cy || !basePositions) return;
+    if (tuningFrameRef.current !== null) {
+      cancelAnimationFrame(tuningFrameRef.current);
+    }
+    tuningFrameRef.current = requestAnimationFrame(() => {
+      applyForceSimulation(
+        cy,
+        basePositions,
+        simulationSpringsRef.current,
+        forceTuning,
+      );
+      tuningFrameRef.current = null;
+    });
+    return () => {
+      if (tuningFrameRef.current !== null) {
+        cancelAnimationFrame(tuningFrameRef.current);
+        tuningFrameRef.current = null;
+      }
+    };
+  }, [forceTuning]);
 
   // Re-layout on weight change without full remount (legacy mode only).
   const previousLegacyConfigRef = useRef<string | null>(null);
@@ -518,6 +573,18 @@ export function MapView({
           classes: 'layout-spring',
         })),
       );
+    });
+    cy.one('layoutstop', () => {
+      const basePositions = captureMovablePositions(cy);
+      basePositionsRef.current = basePositions;
+      simulationSpringsRef.current = springs;
+      applyForceSimulation(
+        cy,
+        basePositions,
+        springs,
+        useUiStore.getState().forceTuning,
+      );
+      cy.fit(cy.nodes(), 40);
     });
     cy.layout({
       name: 'fcose',

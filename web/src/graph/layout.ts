@@ -92,16 +92,22 @@ export interface LayoutSpring {
   elasticity: number;
 }
 
-/** Stronger similarity means a shorter physical spring. */
+function normalizedSpringWeight(score: number): number {
+  // Most aspect similarities live around 0.35-0.90. Remapping that band makes
+  // medium and weak relations decay much faster while preserving strong links.
+  return Math.max(0, Math.min(1, (score - 0.35) / 0.55));
+}
+
+/** Stronger similarity means a shorter target distance. */
 export function layoutSpringLength(score: number): number {
   const similarity = Math.max(0, Math.min(1, score));
   return 90 + 430 * Math.pow(1 - similarity, 1.6);
 }
 
-/** Stronger similarity also means a stiffer spring. */
+/** Keep strong links strong, but make attraction decay faster below them. */
 export function layoutSpringElasticity(score: number): number {
-  const similarity = Math.max(0, Math.min(1, score));
-  return 0.18 + 2.8 * similarity * similarity;
+  const weight = normalizedSpringWeight(score);
+  return 0.08 + 5.5 * Math.pow(weight, 4);
 }
 
 /** Convert directed top-K lists into weighted undirected physical springs. */
@@ -137,6 +143,116 @@ export function buildLayoutSprings(
     idealLength: layoutSpringLength(spring.score),
     elasticity: layoutSpringElasticity(spring.score),
   }));
+}
+
+export interface ForceSimulationConfig {
+  attractionStrength: number;
+  repulsionStrength: number;
+  attractionDecay: number;
+  repulsionDecay: number;
+}
+
+export const DEFAULT_FORCE_TUNING: ForceSimulationConfig = {
+  attractionStrength: 2,
+  repulsionStrength: 0.5,
+  attractionDecay: 2,
+  repulsionDecay: 1,
+};
+
+export interface SimulationPosition {
+  x: number;
+  y: number;
+}
+
+/** Explicit weighted force simulation used by the live tuning sliders. */
+export function simulateWeightedForces(
+  positions: Map<string, SimulationPosition>,
+  springs: LayoutSpring[],
+  tuning: ForceSimulationConfig,
+  iterations = 140,
+): Map<string, SimulationPosition> {
+  const ids = [...positions.keys()];
+  const index = new Map(ids.map((id, position) => [id, position]));
+  const x = new Float64Array(ids.length);
+  const y = new Float64Array(ids.length);
+  const vx = new Float64Array(ids.length);
+  const vy = new Float64Array(ids.length);
+  ids.forEach((id, position) => {
+    const point = positions.get(id)!;
+    x[position] = point.x;
+    y[position] = point.y;
+  });
+  const indexedSprings = springs.flatMap((spring) => {
+    const source = index.get(spring.sourceId);
+    const target = index.get(spring.targetId);
+    return source === undefined || target === undefined
+      ? []
+      : [{ spring, source, target }];
+  });
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const fx = new Float64Array(ids.length);
+    const fy = new Float64Array(ids.length);
+    const cooling = 0.1 + 0.9 * (1 - iteration / iterations);
+
+    for (const { spring, source, target } of indexedSprings) {
+      const dx = x[target] - x[source];
+      const dy = y[target] - y[source];
+      const distance = Math.hypot(dx, dy) || 0.001;
+      const weight = Math.pow(
+        normalizedSpringWeight(spring.score),
+        tuning.attractionDecay,
+      );
+      const magnitude =
+        tuning.attractionStrength * weight * (distance - spring.idealLength) * 0.04;
+      const forceX = (dx / distance) * magnitude;
+      const forceY = (dy / distance) * magnitude;
+      fx[source] += forceX;
+      fy[source] += forceY;
+      fx[target] -= forceX;
+      fy[target] -= forceY;
+    }
+
+    for (let left = 0; left < ids.length; left += 1) {
+      for (let right = left + 1; right < ids.length; right += 1) {
+        let dx = x[left] - x[right];
+        let dy = y[left] - y[right];
+        let distance = Math.hypot(dx, dy);
+        if (distance < 0.001) {
+          const fallback = seedPosition(`${ids[left]}|${ids[right]}`);
+          dx = fallback.x || 1;
+          dy = fallback.y;
+          distance = Math.hypot(dx, dy);
+        }
+        const effectiveDistance = Math.max(18, distance);
+        const magnitude =
+          (tuning.repulsionStrength * 2.5) /
+          Math.pow(effectiveDistance / 100, tuning.repulsionDecay);
+        const forceX = (dx / distance) * magnitude;
+        const forceY = (dy / distance) * magnitude;
+        fx[left] += forceX;
+        fy[left] += forceY;
+        fx[right] -= forceX;
+        fy[right] -= forceY;
+      }
+    }
+
+    for (let position = 0; position < ids.length; position += 1) {
+      // Weak centering prevents the entire system from drifting off-canvas.
+      fx[position] -= x[position] * 0.0007;
+      fy[position] -= y[position] * 0.0007;
+      vx[position] = (vx[position] + fx[position] * cooling) * 0.82;
+      vy[position] = (vy[position] + fy[position] * cooling) * 0.82;
+      const speed = Math.hypot(vx[position], vy[position]);
+      const scale = speed > 12 ? 12 / speed : 1;
+      x[position] += vx[position] * scale;
+      y[position] += vy[position] * scale;
+    }
+  }
+
+  return new Map(
+    ids.map((id, position) => [id, { x: x[position], y: y[position] }]),
+  );
 }
 
 /**
@@ -304,6 +420,7 @@ export const __test = {
   buildLayoutSprings,
   layoutSpringLength,
   layoutSpringElasticity,
+  simulateWeightedForces,
   bundleEdges,
   semanticGroupOf,
   readerBorderWidth,

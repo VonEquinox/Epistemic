@@ -105,7 +105,7 @@ export const cyStylesheet = [
       'target-arrow-color': COLORS.edgeCandidate,
       'target-arrow-shape': 'triangle',
       'arrow-scale': 0.8,
-      'curve-style': 'bezier',
+      'curve-style': 'straight',
       'line-style': 'dashed',
       'line-dash-pattern': [5, 4],
       'font-family': GRAPH_FONT,

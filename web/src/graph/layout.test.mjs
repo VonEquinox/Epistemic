@@ -41,13 +41,16 @@ function topNeighborMap(scores, topK = 4, minScore = 0) {
   }
   return out;
 }
+function normalizedSpringWeight(score) {
+  return Math.max(0, Math.min(1, (score - 0.35) / 0.55));
+}
 function layoutSpringLength(score) {
   const similarity = Math.max(0, Math.min(1, score));
   return 90 + 430 * Math.pow(1 - similarity, 1.6);
 }
 function layoutSpringElasticity(score) {
-  const similarity = Math.max(0, Math.min(1, score));
-  return 0.18 + 2.8 * similarity * similarity;
+  const weight = normalizedSpringWeight(score);
+  return 0.08 + 5.5 * Math.pow(weight, 4);
 }
 function buildLayoutSprings(scores) {
   const pairs = new Map();
@@ -285,5 +288,7 @@ assert.equal(springs.filter((spring) => spring.key === 'a|b').length, 1);
 assert.equal(strongSpring.score, 0.9);
 assert.ok(strongSpring.idealLength < weakerSpring.idealLength);
 assert.ok(strongSpring.elasticity > weakerSpring.elasticity);
+assert.ok(layoutSpringElasticity(0.9) > layoutSpringElasticity(0.8) * 2);
+assert.ok(layoutSpringElasticity(0.8) > 2);
 
 console.log('layout.test.mjs: all passed');

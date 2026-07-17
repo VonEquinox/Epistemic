@@ -49,10 +49,13 @@ export function MapPage() {
   const setShowAssertionEdges = useUiStore((s) => s.setShowAssertionEdges);
   const minSimScore = useUiStore((s) => s.minSimScore);
   const setMinSimScore = useUiStore((s) => s.setMinSimScore);
+  const forceTuning = useUiStore((s) => s.forceTuning);
+  const setForceTuning = useUiStore((s) => s.setForceTuning);
+  const resetForceTuning = useUiStore((s) => s.resetForceTuning);
   const lod = useUiStore((s) => s.lod);
   const nav = useNavigate();
   const [viewName, setViewName] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(true);
   const { data: views } = useSavedViews();
   const createView = useCreateSavedView();
   const deleteView = useDeleteSavedView();
@@ -184,6 +187,97 @@ export function MapPage() {
 
         {showAdvanced && (
           <div className="flex items-center gap-4 flex-wrap border-t border-outline-variant pt-2.5">
+            <div className="basis-full flex items-center gap-4 flex-wrap rounded-xl bg-surface-container px-3 py-2">
+              <span className="font-medium text-on-surface">力模拟</span>
+              <label
+                className="flex items-center gap-2"
+                title="边的基础弹簧拉力；越大，相关节点收拢越明显。"
+              >
+                初始引力
+                <input
+                  type="range"
+                  min={0}
+                  max={4}
+                  step={0.1}
+                  value={forceTuning.attractionStrength}
+                  onChange={(e) =>
+                    setForceTuning({ attractionStrength: Number(e.target.value) })
+                  }
+                  className="w-28"
+                />
+                <span className="w-9 tabular-nums text-on-surface">
+                  {forceTuning.attractionStrength.toFixed(1)}
+                </span>
+              </label>
+              <label
+                className="flex items-center gap-2"
+                title="所有节点的基础排斥强度；越大，图越松散。"
+              >
+                初始斥力
+                <input
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  value={forceTuning.repulsionStrength}
+                  onChange={(e) =>
+                    setForceTuning({ repulsionStrength: Number(e.target.value) })
+                  }
+                  className="w-28"
+                />
+                <span className="w-9 tabular-nums text-on-surface">
+                  {forceTuning.repulsionStrength.toFixed(2)}
+                </span>
+              </label>
+              <label
+                className="flex items-center gap-2"
+                title="相关度降低时，引力下降的速度；越大，只有高相关边保留强拉力。"
+              >
+                引力衰减
+                <input
+                  type="range"
+                  min={1}
+                  max={8}
+                  step={0.25}
+                  value={forceTuning.attractionDecay}
+                  onChange={(e) =>
+                    setForceTuning({ attractionDecay: Number(e.target.value) })
+                  }
+                  className="w-28"
+                />
+                <span className="w-9 tabular-nums text-on-surface">
+                  {forceTuning.attractionDecay.toFixed(2)}
+                </span>
+              </label>
+              <label
+                className="flex items-center gap-2"
+                title="距离增加时，斥力下降的速度；越大，斥力越集中在近距离。"
+              >
+                斥力衰减
+                <input
+                  type="range"
+                  min={1}
+                  max={4}
+                  step={0.1}
+                  value={forceTuning.repulsionDecay}
+                  onChange={(e) =>
+                    setForceTuning({ repulsionDecay: Number(e.target.value) })
+                  }
+                  className="w-28"
+                />
+                <span className="w-9 tabular-nums text-on-surface">
+                  {forceTuning.repulsionDecay.toFixed(1)}
+                </span>
+              </label>
+              <button
+                type="button"
+                className="md-btn-text md-btn-sm ml-auto"
+                onClick={resetForceTuning}
+              >
+                恢复默认
+              </button>
+            </div>
+
             <label className="flex items-center gap-2">
               引用耦合
               <input
