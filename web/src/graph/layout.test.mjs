@@ -79,6 +79,102 @@ function buildLayoutSprings(scores) {
     elasticity: layoutSpringElasticity(spring.primary, spring.bestRank),
   }));
 }
+function refineNearestNeighborPositions(positions, scores, options = {}) {
+  const config = {
+    iterations: 120,
+    margin: 8,
+    step: 0.35,
+    maxMove: 12,
+    minSeparation: 35,
+    collisionRepulsion: 0.08,
+    anchorStrength: 0.003,
+    ...options,
+  };
+  const ids = [...positions.keys()];
+  const refined = new Map([...positions].map(([id, value]) => [id, { ...value }]));
+  const anchors = new Map([...positions].map(([id, value]) => [id, { ...value }]));
+  const strongest = new Map();
+  for (const [sourceId, neighbors] of scores) {
+    const target = [...neighbors]
+      .filter(([targetId, score]) => refined.has(targetId) && Number.isFinite(score))
+      .sort((left, right) => right[1] - left[1])[0];
+    if (target && refined.has(sourceId)) strongest.set(sourceId, target[0]);
+  }
+  const unit = (dx, dy, key) => {
+    const distance = Math.hypot(dx, dy);
+    if (distance > 1e-6) return { x: dx / distance, y: dy / distance, distance };
+    const fallback = seedPosition(key);
+    const fallbackLength = Math.hypot(fallback.x, fallback.y) || 1;
+    return { x: fallback.x / fallbackLength, y: fallback.y / fallbackLength, distance: 0 };
+  };
+  for (let iteration = 0; iteration < config.iterations; iteration += 1) {
+    const deltas = new Map(ids.map((id) => [id, { x: 0, y: 0 }]));
+    const distance = (leftId, rightId) => {
+      const left = refined.get(leftId);
+      const right = refined.get(rightId);
+      return Math.hypot(left.x - right.x, left.y - right.y);
+    };
+    for (const sourceId of ids) {
+      const targetId = strongest.get(sourceId);
+      if (!targetId) continue;
+      let rivalId = null;
+      let rivalDistance = Number.POSITIVE_INFINITY;
+      for (const candidateId of ids) {
+        if (candidateId === sourceId || candidateId === targetId) continue;
+        const candidateDistance = distance(sourceId, candidateId);
+        if (candidateDistance < rivalDistance) {
+          rivalId = candidateId;
+          rivalDistance = candidateDistance;
+        }
+      }
+      if (!rivalId) continue;
+      const targetDistance = distance(sourceId, targetId);
+      const violation = targetDistance + config.margin - rivalDistance;
+      if (violation <= 0) continue;
+      const amount = Math.min(config.maxMove, violation * config.step);
+      const source = refined.get(sourceId);
+      const target = refined.get(targetId);
+      const rival = refined.get(rivalId);
+      const towardTarget = unit(target.x - source.x, target.y - source.y, `${sourceId}|${targetId}`);
+      deltas.get(sourceId).x += towardTarget.x * amount * 0.45;
+      deltas.get(sourceId).y += towardTarget.y * amount * 0.45;
+      deltas.get(targetId).x -= towardTarget.x * amount * 0.45;
+      deltas.get(targetId).y -= towardTarget.y * amount * 0.45;
+      const awayFromRival = unit(source.x - rival.x, source.y - rival.y, `${sourceId}|${rivalId}`);
+      deltas.get(sourceId).x += awayFromRival.x * amount * 0.2;
+      deltas.get(sourceId).y += awayFromRival.y * amount * 0.2;
+      deltas.get(rivalId).x -= awayFromRival.x * amount * 0.2;
+      deltas.get(rivalId).y -= awayFromRival.y * amount * 0.2;
+    }
+    for (let leftIndex = 0; leftIndex < ids.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < ids.length; rightIndex += 1) {
+        const leftId = ids[leftIndex];
+        const rightId = ids[rightIndex];
+        const left = refined.get(leftId);
+        const right = refined.get(rightId);
+        const direction = unit(left.x - right.x, left.y - right.y, `${leftId}|${rightId}`);
+        if (direction.distance >= config.minSeparation) continue;
+        const amount = (config.minSeparation - direction.distance) * config.collisionRepulsion;
+        deltas.get(leftId).x += direction.x * amount;
+        deltas.get(leftId).y += direction.y * amount;
+        deltas.get(rightId).x -= direction.x * amount;
+        deltas.get(rightId).y -= direction.y * amount;
+      }
+    }
+    for (const id of ids) {
+      const position = refined.get(id);
+      const anchor = anchors.get(id);
+      const delta = deltas.get(id);
+      delta.x += (anchor.x - position.x) * config.anchorStrength;
+      delta.y += (anchor.y - position.y) * config.anchorStrength;
+      const magnitude = Math.hypot(delta.x, delta.y);
+      const scale = magnitude > config.maxMove ? config.maxMove / magnitude : 1;
+      position.x += delta.x * scale;
+      position.y += delta.y * scale;
+    }
+  }
+  return refined;
+}
 function semanticGroupOf(type) {
   const SEMANTIC = {
     uses_method_from: 'method',
@@ -292,5 +388,24 @@ assert.equal(primarySpring.primary, true);
 assert.equal(primarySpring.score, 0.9);
 assert.ok(primarySpring.idealLength < secondarySpring.idealLength);
 assert.ok(primarySpring.elasticity > secondarySpring.elasticity);
+
+const initialPositions = new Map([
+  ['a', { x: 0, y: 0 }],
+  ['b', { x: 120, y: 0 }],
+  ['c', { x: 20, y: 0 }],
+  ['d', { x: 0, y: 100 }],
+]);
+const refinedPositions = refineNearestNeighborPositions(
+  initialPositions,
+  new Map([['a', new Map([['b', 0.9], ['c', 0.5]])]]),
+  { iterations: 240, margin: 1, minSeparation: 0, anchorStrength: 0 },
+);
+const distance = (left, right) =>
+  Math.hypot(left.x - right.x, left.y - right.y);
+assert.ok(
+  distance(refinedPositions.get('a'), refinedPositions.get('b')) <
+    distance(refinedPositions.get('a'), refinedPositions.get('c')),
+);
+assert.deepEqual(initialPositions.get('a'), { x: 0, y: 0 });
 
 console.log('layout.test.mjs: all passed');

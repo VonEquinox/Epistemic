@@ -9,6 +9,7 @@ import {
   aspectNeighborMap,
   buildLayoutSprings,
   combineNeighbors,
+  refineNearestNeighborPositions,
   seedPosition,
   topNeighborMap,
   unconnectedNodes,
@@ -102,6 +103,26 @@ const FCOSE_SPREAD = {
   packComponents: true,
   idealDefault: 420,
 };
+
+function refineGlobalLayout(
+  cy: Core,
+  scores: Map<string, Map<string, number>>,
+) {
+  const movableNodes = cy.nodes().filter((node) => !node.locked());
+  const positions = new Map<string, { x: number; y: number }>();
+  movableNodes.forEach((element) => {
+    const node = element as cytoscape.NodeSingular;
+    positions.set(node.id(), { ...node.position() });
+  });
+  const refined = refineNearestNeighborPositions(positions, scores);
+  cy.batch(() => {
+    movableNodes.forEach((element) => {
+      const node = element as cytoscape.NodeSingular;
+      const position = refined.get(node.id());
+      if (position) node.position(position);
+    });
+  });
+}
 
 export function MapView({
   data,
@@ -369,6 +390,11 @@ export function MapView({
       hideEdgesOnViewport: true,
     });
 
+    // fCoSE creates the global clusters; this ordinal pass fixes local cases
+    // where a weaker node accidentally ends up closer than the strongest one.
+    refineGlobalLayout(cy, layoutMap);
+    cy.fit(cy.nodes(), 40);
+
     // Add denser visual edges *after* fcose so they don't act as springs.
     if (visualEdges.length > 0) {
       cy.add(visualEdges);
@@ -521,6 +547,10 @@ export function MapView({
           classes: 'layout-spring',
         })),
       );
+    });
+    cy.one('layoutstop', () => {
+      refineGlobalLayout(cy, layoutMap);
+      cy.fit(cy.nodes(), 40);
     });
     cy.layout({
       name: 'fcose',
