@@ -7,9 +7,10 @@ import { useUiStore } from '../stores/ui';
 import { COLORS, GRAPH_FONT, cyStylesheet } from './styles';
 import {
   aspectNeighborMap,
+  buildLayoutSprings,
   combineNeighbors,
   seedPosition,
-  springLength,
+  topNeighborMap,
   unconnectedNodes,
   lodFromZoom,
   readerBorderWidth,
@@ -85,17 +86,21 @@ function buildLayoutScoreMap(
       ASPECT_LAYOUT_MIN_SCORE,
     );
   }
-  return combineNeighbors(data.neighbors, weights, topicEnabled);
+  return topNeighborMap(
+    combineNeighbors(data.neighbors, weights, topicEnabled),
+    ASPECT_LAYOUT_TOP_K,
+    0.05,
+  );
 }
 
 const FCOSE_SPREAD = {
-  nodeRepulsion: () => 72000,
-  nodeSeparation: 220,
-  gravity: 0.06,
+  nodeRepulsion: () => 52000,
+  nodeSeparation: 100,
+  gravity: 0.035,
   gravityRange: 5.5,
-  numIter: 4000,
-  packing: 'true' as const,
-  idealDefault: 320,
+  numIter: 5000,
+  packComponents: true,
+  idealDefault: 420,
 };
 
 export function MapView({
@@ -181,25 +186,22 @@ export function MapView({
 
     // Only sparse layout springs go into the graph *before* fcose —
     // denser visual edges are added after layout so they don't collapse spacing.
-    const springSet = new Set<string>();
-    for (const [src, m] of layoutMap) {
-      for (const [tgt, score] of m) {
-        const key = [src, tgt].sort().join('|');
-        if (springSet.has(key)) continue;
-        springSet.add(key);
-        elements.push({
-          data: {
-            id: `spring-${activeAspect ?? 'mix'}-${key}`,
-            source: src,
-            target: tgt,
-            weight: score,
-            score,
-            idealEdgeLength: springLength(score),
-            type: 'layout_spring',
-          },
-          classes: 'layout-spring',
-        });
-      }
+    for (const spring of buildLayoutSprings(layoutMap)) {
+      elements.push({
+        data: {
+          id: `spring-${activeAspect ?? 'mix'}-${spring.key}`,
+          source: spring.sourceId,
+          target: spring.targetId,
+          weight: spring.score,
+          score: spring.score,
+          primary: spring.primary,
+          bestRank: spring.bestRank,
+          idealEdgeLength: spring.idealLength,
+          edgeElasticity: spring.elasticity,
+          type: 'layout_spring',
+        },
+        classes: 'layout-spring',
+      });
     }
 
     // Precompute visual edges to add after layout.
@@ -278,13 +280,16 @@ export function MapView({
           },
         },
         {
-          // Invisible layout-only springs (never drawn).
+          // Keep springs transparent rather than display:none: fCoSE excludes
+          // display:none edges from its force calculation.
           selector: 'edge.layout-spring',
           style: {
-            display: 'none',
             'curve-style': 'haystack',
-            width: 1,
+            width: 0.1,
             opacity: 0,
+            'line-opacity': 0,
+            'target-arrow-shape': 'none',
+            events: 'no',
           },
         },
         {
@@ -341,16 +346,21 @@ export function MapView({
       layout: {
         name: 'fcose',
         animate: false,
-        randomize: false,
+        randomize: true,
         quality: 'proof',
+        samplingType: true,
+        sampleSize: 25,
         idealEdgeLength: (edge: cytoscape.EdgeSingular) =>
           edge.data('idealEdgeLength') ?? FCOSE_SPREAD.idealDefault,
+        edgeElasticity: (edge: cytoscape.EdgeSingular) =>
+          edge.data('edgeElasticity') ?? 0.03,
         nodeRepulsion: FCOSE_SPREAD.nodeRepulsion,
         nodeSeparation: FCOSE_SPREAD.nodeSeparation,
         gravity: FCOSE_SPREAD.gravity,
         gravityRange: FCOSE_SPREAD.gravityRange,
         numIter: FCOSE_SPREAD.numIter,
-        packing: FCOSE_SPREAD.packing,
+        packComponents: FCOSE_SPREAD.packComponents,
+        tile: true,
       } as cytoscape.LayoutOptions,
       minZoom: 0.15,
       maxZoom: 3,
@@ -473,43 +483,64 @@ export function MapView({
     applySimThreshold(cy, minSimScore, !!activeAspect);
   }, [minSimScore, activeAspect]);
 
-  // Re-layout on weight change without full remount (legacy mode only)
+  // Re-layout on weight change without full remount (legacy mode only).
+  const previousLegacyConfigRef = useRef<string | null>(null);
   useEffect(() => {
-    if (activeAspect) return;
+    if (activeAspect) {
+      previousLegacyConfigRef.current = null;
+      return;
+    }
+    const configKey = JSON.stringify({ weights, topicEnabled });
+    if (previousLegacyConfigRef.current === null) {
+      previousLegacyConfigRef.current = configKey;
+      return;
+    }
+    if (previousLegacyConfigRef.current === configKey) return;
+    previousLegacyConfigRef.current = configKey;
+
     const cy = cyRef.current;
     if (!cy) return;
-    const combined = combineNeighbors(data.neighbors, weights, topicEnabled);
+    const layoutMap = buildLayoutScoreMap(data, null, weights, topicEnabled);
+    const springs = buildLayoutSprings(layoutMap);
     cy.batch(() => {
-      cy.edges('.similarity').forEach((e) => {
-        const src = e.source().id();
-        const tgt = e.target().id();
-        const score =
-          combined.get(src)?.get(tgt) ?? combined.get(tgt)?.get(src) ?? 0;
-        e.data('idealEdgeLength', springLength(score));
-      });
+      cy.remove(cy.edges('.layout-spring'));
+      cy.add(
+        springs.map((spring) => ({
+          data: {
+            id: `spring-mix-${spring.key}`,
+            source: spring.sourceId,
+            target: spring.targetId,
+            weight: spring.score,
+            score: spring.score,
+            primary: spring.primary,
+            bestRank: spring.bestRank,
+            idealEdgeLength: spring.idealLength,
+            edgeElasticity: spring.elasticity,
+            type: 'layout_spring',
+          },
+          classes: 'layout-spring',
+        })),
+      );
     });
     cy.layout({
       name: 'fcose',
       animate: true,
       animationDuration: 500,
       randomize: false,
-      // Only layout-spring edges exist as pullers in the graph; visual edges
-      // are display-only (added after initial layout). If any remain, give
-      // them huge ideal length so they don't collapse clusters.
-      idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
-        if (edge.hasClass('layout-spring')) {
-          return edge.data('idealEdgeLength') ?? FCOSE_SPREAD.idealDefault;
-        }
-        return 1200;
-      },
+      quality: 'proof',
+      idealEdgeLength: (edge: cytoscape.EdgeSingular) =>
+        edge.data('idealEdgeLength') ?? FCOSE_SPREAD.idealDefault,
+      edgeElasticity: (edge: cytoscape.EdgeSingular) =>
+        edge.data('edgeElasticity') ?? 0.03,
       nodeRepulsion: FCOSE_SPREAD.nodeRepulsion,
       nodeSeparation: FCOSE_SPREAD.nodeSeparation,
       gravity: FCOSE_SPREAD.gravity,
       gravityRange: FCOSE_SPREAD.gravityRange,
       numIter: FCOSE_SPREAD.numIter,
-      packing: FCOSE_SPREAD.packing,
+      packComponents: FCOSE_SPREAD.packComponents,
+      tile: true,
     } as cytoscape.LayoutOptions).run();
-  }, [weights, topicEnabled, data.neighbors, activeAspect]);
+  }, [weights, topicEnabled, data, activeAspect]);
 
   return <div ref={containerRef} className="cy-container cy-canvas" />;
 }

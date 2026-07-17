@@ -22,6 +22,63 @@ function lodFromZoom(zoom, z1 = 0.6, z2 = 1.2) {
   if (zoom < z2) return 'mid';
   return 'near';
 }
+function topNeighborMap(scores, topK = 4, minScore = 0) {
+  const out = new Map();
+  for (const [workId, neighbors] of scores) {
+    const strongest = [...neighbors]
+      .filter(
+        ([neighborId, score]) =>
+          neighborId !== workId && Number.isFinite(score) && score >= minScore,
+      )
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, topK);
+    if (strongest.length > 0) out.set(workId, new Map(strongest));
+  }
+  return out;
+}
+function layoutSpringLength(score, primary) {
+  const similarity = Math.max(0, Math.min(1, score));
+  const falloff = (1 - similarity) * (1 - similarity);
+  return primary ? 70 + 260 * falloff : 360 + 220 * falloff;
+}
+function layoutSpringElasticity(primary, bestRank) {
+  if (primary) return 6;
+  return 0.03 / Math.max(1, bestRank);
+}
+function buildLayoutSprings(scores) {
+  const pairs = new Map();
+  for (const [sourceId, neighbors] of scores) {
+    const ranked = [...neighbors]
+      .filter(
+        ([targetId, score]) => targetId !== sourceId && Number.isFinite(score),
+      )
+      .sort((left, right) => right[1] - left[1]);
+    ranked.forEach(([targetId, score], rank) => {
+      const [source, target] = [sourceId, targetId].sort();
+      const key = `${source}|${target}`;
+      const existing = pairs.get(key);
+      if (!existing) {
+        pairs.set(key, {
+          key,
+          sourceId: source,
+          targetId: target,
+          score,
+          primary: rank === 0,
+          bestRank: rank,
+        });
+      } else {
+        existing.score = Math.max(existing.score, score);
+        existing.primary ||= rank === 0;
+        existing.bestRank = Math.min(existing.bestRank, rank);
+      }
+    });
+  }
+  return [...pairs.values()].map((spring) => ({
+    ...spring,
+    idealLength: layoutSpringLength(spring.score, spring.primary),
+    elasticity: layoutSpringElasticity(spring.primary, spring.bestRank),
+  }));
+}
 function semanticGroupOf(type) {
   const SEMANTIC = {
     uses_method_from: 'method',
@@ -212,5 +269,28 @@ const comb = combineNeighbors(
   false,
 );
 assert.ok(Math.abs(comb.get('w1').get('w2') - 1) < 1e-9);
+
+const trimmed = topNeighborMap(
+  new Map([
+    ['a', new Map([['b', 0.9], ['c', 0.7], ['d', 0.2]])],
+  ]),
+  2,
+  0.3,
+);
+assert.deepEqual([...trimmed.get('a').keys()], ['b', 'c']);
+
+const springs = buildLayoutSprings(
+  new Map([
+    ['a', new Map([['b', 0.9], ['c', 0.7]])],
+    ['b', new Map([['a', 0.85], ['c', 0.6]])],
+  ]),
+);
+const primarySpring = springs.find((spring) => spring.key === 'a|b');
+const secondarySpring = springs.find((spring) => spring.key === 'a|c');
+assert.equal(springs.filter((spring) => spring.key === 'a|b').length, 1);
+assert.equal(primarySpring.primary, true);
+assert.equal(primarySpring.score, 0.9);
+assert.ok(primarySpring.idealLength < secondarySpring.idealLength);
+assert.ok(primarySpring.elasticity > secondarySpring.elasticity);
 
 console.log('layout.test.mjs: all passed');

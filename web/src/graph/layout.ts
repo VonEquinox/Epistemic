@@ -63,6 +63,94 @@ export function aspectNeighborMap(
   return out;
 }
 
+/** Keep only the strongest outgoing similarities for each node. */
+export function topNeighborMap(
+  scores: Map<string, Map<string, number>>,
+  topK = 4,
+  minScore = 0,
+): Map<string, Map<string, number>> {
+  const out = new Map<string, Map<string, number>>();
+  for (const [workId, neighbors] of scores) {
+    const strongest = [...neighbors]
+      .filter(
+        ([neighborId, score]) =>
+          neighborId !== workId && Number.isFinite(score) && score >= minScore,
+      )
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, topK);
+    if (strongest.length > 0) out.set(workId, new Map(strongest));
+  }
+  return out;
+}
+
+export interface LayoutSpring {
+  key: string;
+  sourceId: string;
+  targetId: string;
+  score: number;
+  /** True when either endpoint ranks the other as its strongest neighbor. */
+  primary: boolean;
+  /** Best zero-based rank assigned by either endpoint. */
+  bestRank: number;
+  idealLength: number;
+  elasticity: number;
+}
+
+export function layoutSpringLength(score: number, primary: boolean): number {
+  const similarity = Math.max(0, Math.min(1, score));
+  const falloff = (1 - similarity) * (1 - similarity);
+  // Primary links form local geometry; secondary links only keep clusters coherent.
+  return primary ? 70 + 260 * falloff : 360 + 220 * falloff;
+}
+
+export function layoutSpringElasticity(primary: boolean, bestRank: number): number {
+  if (primary) return 6;
+  return 0.03 / Math.max(1, bestRank);
+}
+
+/** Convert directed top-K lists into canonical undirected layout springs. */
+export function buildLayoutSprings(
+  scores: Map<string, Map<string, number>>,
+): LayoutSpring[] {
+  const pairs = new Map<
+    string,
+    Omit<LayoutSpring, 'idealLength' | 'elasticity'>
+  >();
+
+  for (const [sourceId, neighbors] of scores) {
+    const ranked = [...neighbors]
+      .filter(
+        ([targetId, score]) => targetId !== sourceId && Number.isFinite(score),
+      )
+      .sort((left, right) => right[1] - left[1]);
+    ranked.forEach(([targetId, score], rank) => {
+      const [source, target] = [sourceId, targetId].sort();
+      const key = `${source}|${target}`;
+      const existing = pairs.get(key);
+      if (!existing) {
+        pairs.set(key, {
+          key,
+          sourceId: source,
+          targetId: target,
+          score,
+          primary: rank === 0,
+          bestRank: rank,
+        });
+        return;
+      }
+      existing.score = Math.max(existing.score, score);
+      existing.primary ||= rank === 0;
+      existing.bestRank = Math.min(existing.bestRank, rank);
+    });
+  }
+
+  return [...pairs.values()].map((spring) => ({
+    ...spring,
+    idealLength: layoutSpringLength(spring.score, spring.primary),
+    elasticity: layoutSpringElasticity(spring.primary, spring.bestRank),
+  }));
+}
+
 /**
  * Spring length from combined score.
  * High similarity → shorter spring; weak pairs stay far apart so the map breathes.
@@ -216,6 +304,10 @@ export const __test = {
   lodFromZoom,
   combineNeighbors,
   aspectNeighborMap,
+  topNeighborMap,
+  buildLayoutSprings,
+  layoutSpringLength,
+  layoutSpringElasticity,
   bundleEdges,
   semanticGroupOf,
   readerBorderWidth,
