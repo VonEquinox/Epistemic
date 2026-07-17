@@ -96,7 +96,7 @@ function buildLayoutScoreMap(
 
 const FCOSE_SPREAD = {
   nodeRepulsion: () => 52000,
-  nodeSeparation: 100,
+  nodeSeparation: 120,
   gravity: 0.035,
   gravityRange: 5.5,
   numIter: 5000,
@@ -104,17 +104,45 @@ const FCOSE_SPREAD = {
   idealDefault: 420,
 };
 
+function estimatedLabelWidth(label: string): number {
+  const width = [...label].reduce((total, character) => {
+    if (/\s/.test(character)) return total + 2.5;
+    if (/[\u2e80-\u9fff]/.test(character)) return total + 8;
+    return total + 4.5;
+  }, 0);
+  return Math.min(110, Math.max(13, width));
+}
+
 function refineGlobalLayout(
   cy: Core,
   scores: Map<string, Map<string, number>>,
 ) {
   const movableNodes = cy.nodes().filter((node) => !node.locked());
   const positions = new Map<string, { x: number; y: number }>();
+  const collisionBounds = new Map<
+    string,
+    { left: number; right: number; top: number; bottom: number }
+  >();
   movableNodes.forEach((element) => {
     const node = element as cytoscape.NodeSingular;
-    positions.set(node.id(), { ...node.position() });
+    const position = node.position();
+    const box = node.boundingBox({ includeLabels: true, includeOverlays: false });
+    const labelWidth = estimatedLabelWidth(String(node.data('label') ?? ''));
+    const halfWidth = labelWidth / 2;
+    positions.set(node.id(), { ...position });
+    collisionBounds.set(node.id(), {
+      left: Math.min(box.x1 - position.x, -halfWidth),
+      right: Math.max(box.x2 - position.x, halfWidth),
+      top: Math.min(box.y1 - position.y, -9),
+      bottom: Math.max(box.y2 - position.y, 24),
+    });
   });
-  const refined = refineNearestNeighborPositions(positions, scores);
+  const refined = refineNearestNeighborPositions(
+    positions,
+    scores,
+    {},
+    collisionBounds,
+  );
   cy.batch(() => {
     movableNodes.forEach((element) => {
       const node = element as cytoscape.NodeSingular;
@@ -371,6 +399,7 @@ export function MapView({
         quality: 'proof',
         samplingType: true,
         sampleSize: 25,
+        nodeDimensionsIncludeLabels: true,
         idealEdgeLength: (edge: cytoscape.EdgeSingular) =>
           edge.data('idealEdgeLength') ?? FCOSE_SPREAD.idealDefault,
         edgeElasticity: (edge: cytoscape.EdgeSingular) =>
@@ -558,6 +587,7 @@ export function MapView({
       animationDuration: 500,
       randomize: false,
       quality: 'proof',
+      nodeDimensionsIncludeLabels: true,
       idealEdgeLength: (edge: cytoscape.EdgeSingular) =>
         edge.data('idealEdgeLength') ?? FCOSE_SPREAD.idealDefault,
       edgeElasticity: (edge: cytoscape.EdgeSingular) =>

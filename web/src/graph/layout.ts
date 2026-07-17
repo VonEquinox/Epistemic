@@ -156,12 +156,20 @@ export interface GraphPosition {
   y: number;
 }
 
+export interface CollisionBounds {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 export interface NearestNeighborRefinementOptions {
   iterations: number;
   margin: number;
   step: number;
   maxMove: number;
   minSeparation: number;
+  collisionPadding: number;
   collisionRepulsion: number;
   anchorStrength: number;
 }
@@ -171,9 +179,10 @@ const DEFAULT_REFINEMENT: NearestNeighborRefinementOptions = {
   margin: 8,
   step: 0.35,
   maxMove: 12,
-  minSeparation: 35,
-  collisionRepulsion: 0.08,
-  anchorStrength: 0.003,
+  minSeparation: 45,
+  collisionPadding: 8,
+  collisionRepulsion: 0.12,
+  anchorStrength: 0.004,
 };
 
 /**
@@ -185,6 +194,7 @@ export function refineNearestNeighborPositions(
   positions: Map<string, GraphPosition>,
   scores: Map<string, Map<string, number>>,
   options: Partial<NearestNeighborRefinementOptions> = {},
+  collisionBounds?: Map<string, CollisionBounds>,
 ): Map<string, GraphPosition> {
   const config = { ...DEFAULT_REFINEMENT, ...options };
   const ids = [...positions.keys()];
@@ -276,6 +286,44 @@ export function refineNearestNeighborPositions(
         const rightId = ids[rightIndex];
         const left = refined.get(leftId)!;
         const right = refined.get(rightId)!;
+        const leftBounds = collisionBounds?.get(leftId);
+        const rightBounds = collisionBounds?.get(rightId);
+        if (leftBounds && rightBounds) {
+          const overlapX =
+            Math.min(
+              left.x + leftBounds.right,
+              right.x + rightBounds.right,
+            ) -
+              Math.max(
+                left.x + leftBounds.left,
+                right.x + rightBounds.left,
+              ) +
+            config.collisionPadding;
+          const overlapY =
+            Math.min(
+              left.y + leftBounds.bottom,
+              right.y + rightBounds.bottom,
+            ) -
+              Math.max(
+                left.y + leftBounds.top,
+                right.y + rightBounds.top,
+              ) +
+            config.collisionPadding;
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          if (overlapX < overlapY) {
+            const direction = left.x <= right.x ? -1 : 1;
+            const amount = overlapX * config.collisionRepulsion;
+            deltas.get(leftId)!.x += direction * amount;
+            deltas.get(rightId)!.x -= direction * amount;
+          } else {
+            const direction = left.y <= right.y ? -1 : 1;
+            const amount = overlapY * config.collisionRepulsion;
+            deltas.get(leftId)!.y += direction * amount;
+            deltas.get(rightId)!.y -= direction * amount;
+          }
+          continue;
+        }
+
         const direction = unit(
           left.x - right.x,
           left.y - right.y,

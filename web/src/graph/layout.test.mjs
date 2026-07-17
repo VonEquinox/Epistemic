@@ -79,15 +79,21 @@ function buildLayoutSprings(scores) {
     elasticity: layoutSpringElasticity(spring.primary, spring.bestRank),
   }));
 }
-function refineNearestNeighborPositions(positions, scores, options = {}) {
+function refineNearestNeighborPositions(
+  positions,
+  scores,
+  options = {},
+  collisionBounds,
+) {
   const config = {
     iterations: 120,
     margin: 8,
     step: 0.35,
     maxMove: 12,
-    minSeparation: 35,
-    collisionRepulsion: 0.08,
-    anchorStrength: 0.003,
+    minSeparation: 45,
+    collisionPadding: 8,
+    collisionRepulsion: 0.12,
+    anchorStrength: 0.004,
     ...options,
   };
   const ids = [...positions.keys()];
@@ -152,6 +158,31 @@ function refineNearestNeighborPositions(positions, scores, options = {}) {
         const rightId = ids[rightIndex];
         const left = refined.get(leftId);
         const right = refined.get(rightId);
+        const leftBounds = collisionBounds?.get(leftId);
+        const rightBounds = collisionBounds?.get(rightId);
+        if (leftBounds && rightBounds) {
+          const overlapX =
+            Math.min(left.x + leftBounds.right, right.x + rightBounds.right) -
+              Math.max(left.x + leftBounds.left, right.x + rightBounds.left) +
+            config.collisionPadding;
+          const overlapY =
+            Math.min(left.y + leftBounds.bottom, right.y + rightBounds.bottom) -
+              Math.max(left.y + leftBounds.top, right.y + rightBounds.top) +
+            config.collisionPadding;
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          if (overlapX < overlapY) {
+            const direction = left.x <= right.x ? -1 : 1;
+            const amount = overlapX * config.collisionRepulsion;
+            deltas.get(leftId).x += direction * amount;
+            deltas.get(rightId).x -= direction * amount;
+          } else {
+            const direction = left.y <= right.y ? -1 : 1;
+            const amount = overlapY * config.collisionRepulsion;
+            deltas.get(leftId).y += direction * amount;
+            deltas.get(rightId).y -= direction * amount;
+          }
+          continue;
+        }
         const direction = unit(left.x - right.x, left.y - right.y, `${leftId}|${rightId}`);
         if (direction.distance >= config.minSeparation) continue;
         const amount = (config.minSeparation - direction.distance) * config.collisionRepulsion;
@@ -407,5 +438,26 @@ assert.ok(
     distance(refinedPositions.get('a'), refinedPositions.get('c')),
 );
 assert.deepEqual(initialPositions.get('a'), { x: 0, y: 0 });
+
+const overlappingPositions = new Map([
+  ['a', { x: 0, y: 0 }],
+  ['b', { x: 15, y: 0 }],
+  ['c', { x: 200, y: 0 }],
+]);
+const collisionBoxes = new Map([
+  ['a', { left: -35, right: 35, top: -10, bottom: 22 }],
+  ['b', { left: -35, right: 35, top: -10, bottom: 22 }],
+  ['c', { left: -35, right: 35, top: -10, bottom: 22 }],
+]);
+const separatedPositions = refineNearestNeighborPositions(
+  overlappingPositions,
+  new Map(),
+  { iterations: 160, anchorStrength: 0 },
+  collisionBoxes,
+);
+assert.ok(
+  Math.abs(separatedPositions.get('a').x - separatedPositions.get('b').x) >= 78 ||
+    Math.abs(separatedPositions.get('a').y - separatedPositions.get('b').y) >= 39.9,
+);
 
 console.log('layout.test.mjs: all passed');
